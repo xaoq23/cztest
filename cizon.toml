@@ -5,7 +5,10 @@ edition = "c++20"
 compile_commands = true
 
 [compiler]
-flags = ["-Wall", "-Wextra", "-Wpedantic"]
+# strict 展开为 -Wall -Wextra -Wpedantic，werror 让警告变成错误：
+# 框架自身必须零警告通过。
+strict = true
+werror = true
 
 [[target]]
 name = "cztest_selftest"
