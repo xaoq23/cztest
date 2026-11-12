@@ -181,6 +181,27 @@ TEST(Mock, MoveOnlyArguments) {
   mock.Take(std::make_unique<int>(1));
 }
 
+// --- a matcher of the user: it only needs a Matches member ----------------
+namespace {
+
+struct IsEven {
+    bool Matches(int value) const { return value % 2 == 0; }
+};
+
+static_assert(cztest::detail::MatcherFor<IsEven, int>);
+static_assert(!cztest::detail::MatcherFor<int, int>);
+static_assert(cztest::detail::ActionFor<int (*)(int), int, int>);
+static_assert(!cztest::detail::ActionFor<int (*)(int), int, std::string>);
+
+}  // namespace
+
+TEST(Mock, AUserDefinedMatcherWorksWithoutInheriting) {
+    MockStorage mock;
+    EXPECT_CALL(mock, Get(IsEven{})).Times(1).WillOnce(cztest::Return(1));
+
+    EXPECT_EQ(mock.Get(4), 1);
+}
+
 TEST(Mock, Matchers) {  EXPECT_TRUE(cztest::Eq(3).Matches(3));
   EXPECT_FALSE(cztest::Eq(3).Matches(4));
   EXPECT_TRUE(cztest::Ne(3).Matches(4));
