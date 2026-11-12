@@ -4,6 +4,7 @@
 #ifndef CZTEST_MATCHERS_HPP
 #define CZTEST_MATCHERS_HPP
 
+#include <concepts>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -14,6 +15,15 @@
 
 namespace cztest {
 
+/// A type that can hold a string; the string matchers work on it.
+template <class T>
+concept StringLike =
+    std::is_constructible_v<std::string, T> || std::is_convertible_v<T, std::string_view>;
+
+/// A type that can be null; the null matchers work on it.
+template <class T>
+concept PointerLike = std::is_pointer_v<T>;
+
 namespace detail {
 
 // Common base of every matcher so that generic code can detect them.
@@ -21,6 +31,15 @@ class MatcherBase {
  public:
   virtual ~MatcherBase() = default;
   virtual std::string Describe() const = 0;
+};
+
+/// A matcher decides whether a value of type V is accepted.
+///
+/// A user can write a matcher of their own: it only needs a Matches member,
+/// it does not have to derive from MatcherBase.
+template <class M, class V>
+concept MatcherFor = requires(const M& matcher, const V& value) {
+  { matcher.Matches(value) } -> std::convertible_to<bool>;
 };
 
 // A string view that owns its data when the source type cannot be viewed
@@ -297,6 +316,7 @@ class StringMatcher : public detail::MatcherBase {
   StringMatcher(Kind kind, std::string text) : kind_(kind), text_(std::move(text)) {}
 
   template <class T>
+    requires StringLike<T>
   operator Matcher<T>() const {
     switch (kind_) {
       case Kind::kEqual: return Matcher<T>::StringEqual(text_);
@@ -332,6 +352,7 @@ class NullMatcher : public detail::MatcherBase {
   explicit NullMatcher(bool expect_null) : expect_null_(expect_null) {}
 
   template <class T>
+    requires PointerLike<T>
   operator Matcher<T>() const {
     return expect_null_ ? Matcher<T>::IsNull() : Matcher<T>::NotNull();
   }
@@ -461,11 +482,21 @@ auto Not(M&& matcher) {
 namespace detail {
 
 // Converts a user supplied argument into a Matcher<T>.
+//
+// Three kinds of arguments are accepted:
+//   - a matcher of the framework (it converts itself),
+//   - a matcher of the user: any type with a Matches(value) member,
+//   - a plain value, which is compared with ==.
 template <class T, class M>
 Matcher<T> AsMatcher(M&& value) {
   using D = std::decay_t<M>;
   if constexpr (std::is_base_of_v<MatcherBase, D>) {
     return static_cast<Matcher<T>>(std::forward<M>(value));
+  } else if constexpr (cztest::detail::MatcherFor<D, T>) {
+    D matcher(std::forward<M>(value));
+    return Matcher<T>::Custom(
+        [matcher = std::move(matcher)](const T& candidate) { return matcher.Matches(candidate); },
+        "matches a user defined matcher");
   } else {
     static_assert(std::is_constructible_v<T, D>,
                   "The expected value is not compatible with the mocked parameter type.");
