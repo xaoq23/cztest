@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <iostream>
 
+#include "cztest/compat.hpp"
 #include "cztest/core.hpp"
 #include "cztest/matchers.hpp"
 #include "cztest/mock.hpp"
