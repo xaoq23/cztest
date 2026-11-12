@@ -16,8 +16,11 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <source_location>
 #include <type_traits>
 #include <vector>
 
@@ -100,6 +103,8 @@ class Message {
   std::string text_;
 };
 
+}  // namespace detail
+
 // ---------------------------------------------------------------------------
 // AssertionResult: the outcome of a single assertion.
 // ---------------------------------------------------------------------------
@@ -107,7 +112,8 @@ struct AssertionResult {
   bool ok{true};
   std::string message;
 
-  explicit operator bool() const { return ok; }
+  constexpr explicit operator bool() const { return ok; }
+  constexpr bool failed() const { return !ok; }
 
   static AssertionResult Success() { return AssertionResult{true, {}}; }
   static AssertionResult Failure(std::string message) { return AssertionResult{false, std::move(message)}; }
@@ -118,6 +124,8 @@ class FatalAssertionFailure : public std::exception {
  public:
   const char* what() const noexcept override { return "fatal assertion failure"; }
 };
+
+namespace detail {
 
 // ---------------------------------------------------------------------------
 // MockVerifier: implemented by cztest::MockBase so that the core can verify
@@ -130,8 +138,7 @@ class MockVerifier {
 };
 
 struct FailureRecord {
-  std::string file;
-  int line{0};
+  std::source_location location;
   std::string message;
 };
 
@@ -167,8 +174,8 @@ class TestContext {
   const std::vector<FailureRecord>& failures() const { return failures_; }
   const std::string& test_name() const { return test_name_; }
 
-  void AddFailure(std::string file, int line, std::string message) {
-    failures_.push_back(FailureRecord{std::move(file), line, std::move(message)});
+  void AddFailure(std::source_location location, std::string message) {
+    failures_.push_back(FailureRecord{location, std::move(message)});
   }
 
   void AddMock(MockVerifier* mock) { mocks_.push_back(mock); }
@@ -184,7 +191,14 @@ class TestContext {
   bool running_{false};
 };
 
-inline void ReportFailure(const char* file, int line, std::string message, bool fatal) {
+// ---------------------------------------------------------------------------
+// ReportFailure: records a failure in the running test.
+//
+// `fatal` additionally aborts the test by throwing FatalAssertionFailure. The
+// throw happens here and not in a destructor, so a fatal assertion never
+// escapes through an exception that is already in flight.
+// ---------------------------------------------------------------------------
+inline void ReportFailure(std::source_location location, std::string message, bool fatal) {
   if (TestContext* ctx = TestContext::Current()) {
     if (!ctx->running()) {
       // Outside of a test there is nobody to report to.
@@ -192,8 +206,7 @@ inline void ReportFailure(const char* file, int line, std::string message, bool 
       if (fatal) throw FatalAssertionFailure();
       return;
     }
-    std::string location = file != nullptr ? file : ctx->test_name();
-    ctx->AddFailure(std::move(location), line, std::move(message));
+    ctx->AddFailure(location, std::move(message));
   } else {
     std::cerr << "cztest: failure outside of a test: " << message << "\n";
   }
@@ -202,66 +215,125 @@ inline void ReportFailure(const char* file, int line, std::string message, bool 
 
 // ---------------------------------------------------------------------------
 // FailureRecorder: reports a failure when a Message is assigned to it.
+//
+// The assignment is what performs the report, so a streamed "<< ..." message is
+// complete before the failure is recorded.
 // ---------------------------------------------------------------------------
 class FailureRecorder {
  public:
-  FailureRecorder(const char* file, int line, bool fatal) : file_(file), line_(line), fatal_(fatal) {}
+  FailureRecorder(std::source_location location, bool fatal)
+      : location_(location), fatal_(fatal) {}
 
   void operator=(const Message& message) const {
-    ReportFailure(file_, line_, message.str(), fatal_);
+    ReportFailure(location_, message.str(), fatal_);
   }
 
  private:
-  const char* file_;
-  int line_;
+  std::source_location location_;
   bool fatal_;
 };
 
 }  // namespace detail
 
 // ---------------------------------------------------------------------------
+// ReportFailure: the public entry point for recording a failure.
+//
+// `fatal` additionally aborts the current test.
+// ---------------------------------------------------------------------------
+inline void ReportFailure(std::source_location location, std::string message, bool fatal = false) {
+  detail::ReportFailure(location, std::move(message), fatal);
+}
+
+// ---------------------------------------------------------------------------
 // Public helpers used by the assertion macros.
 // ---------------------------------------------------------------------------
 namespace detail {
 
-template <class A, class B>
-AssertionResult CompareEqual(const A& a, const B& b, const char* expr_a, const char* expr_b) {
-  if (a == b) return AssertionResult::Success();
+/// Builds the standard "Expected / Actual" message of a comparison.
+inline std::string ComparisonMessage(std::string_view expr, std::string_view actual_a,
+                                     std::string_view actual_b) {
   std::string msg = "Expected: ";
-  msg += expr_a;
-  msg += " == ";
-  msg += expr_b;
+  msg += expr;
   msg += "\n  Actual: ";
-  msg += PrintValue(a);
+  msg += actual_a;
   msg += " vs ";
-  msg += PrintValue(b);
-  return AssertionResult::Failure(std::move(msg));
+  msg += actual_b;
+  return msg;
 }
 
-#define CZTEST_DEFINE_COMPARE(op, name, text)                                                    \
-  template <class A, class B>                                                                   \
-  AssertionResult name(const A& a, const B& b, const char* expr_a, const char* expr_b) {          \
-    if (a op b) return AssertionResult::Success();                                              \
-    std::string msg = "Expected: ";                                                              \
-    msg += expr_a;                                                                              \
-    msg += " " text " ";                                                                        \
-    msg += expr_b;                                                                              \
-    msg += "\n  Actual: ";                                                                      \
-    msg += PrintValue(a);                                                                       \
-    msg += " vs ";                                                                               \
-    msg += PrintValue(b);                                                                       \
-    return AssertionResult::Failure(std::move(msg));                                            \
+inline bool StringEquals(const char* a, const char* b) {
+  return (a == nullptr || b == nullptr) ? (a == b) : (std::strcmp(a, b) == 0);
+}
+
+}  // namespace detail
+
+// ---------------------------------------------------------------------------
+// Comparison predicates.
+//
+// They are constexpr and free of any allocation, so a property can be checked
+// at compile time:
+//
+//   static_assert(cztest::Equal(1 + 1, 2));
+// ---------------------------------------------------------------------------
+template <class A, class B>
+[[nodiscard]] constexpr bool Equal(const A& a, const B& b) {
+  return a == b;
+}
+
+template <class A, class B>
+[[nodiscard]] constexpr bool NotEqual(const A& a, const B& b) {
+  return a != b;
+}
+
+template <class A, class B>
+[[nodiscard]] constexpr bool Less(const A& a, const B& b) {
+  return a < b;
+}
+
+template <class A, class B>
+[[nodiscard]] constexpr bool LessEqual(const A& a, const B& b) {
+  return a <= b;
+}
+
+template <class A, class B>
+[[nodiscard]] constexpr bool Greater(const A& a, const B& b) {
+  return a > b;
+}
+
+template <class A, class B>
+[[nodiscard]] constexpr bool GreaterEqual(const A& a, const B& b) {
+  return a >= b;
+}
+
+// ---------------------------------------------------------------------------
+// Assertions.
+//
+// Every assertion is an ordinary function that returns an AssertionResult;
+// the EXPECT_* / ASSERT_* macros are thin sugar on top of them.  The functions
+// can be used directly when a test needs to branch on the outcome:
+//
+//   if (auto r = cztest::ExpectEqual(a, b); !r) {
+//     cztest::ReportFailure(std::source_location::current(), r.message);
+//   }
+// ---------------------------------------------------------------------------
+#define CZTEST_DEFINE_EXPECT(op, name, text)                                                   \
+  template <class A, class B>                                                                 \
+  [[nodiscard]] AssertionResult name(const A& a, const B& b, std::string_view expr = text) {  \
+    if (a op b) return AssertionResult::Success();                                            \
+    return AssertionResult::Failure(                                                          \
+        detail::ComparisonMessage(expr, detail::PrintValue(a), detail::PrintValue(b)));        \
   }
 
-CZTEST_DEFINE_COMPARE(!=, CompareNotEqual, "!=")
-CZTEST_DEFINE_COMPARE(<, CompareLess, "<")
-CZTEST_DEFINE_COMPARE(<=, CompareLessEqual, "<=")
-CZTEST_DEFINE_COMPARE(>, CompareGreater, ">")
-CZTEST_DEFINE_COMPARE(>=, CompareGreaterEqual, ">=")
+CZTEST_DEFINE_EXPECT(==, ExpectEqual, "a == b")
+CZTEST_DEFINE_EXPECT(!=, ExpectNotEqual, "a != b")
+CZTEST_DEFINE_EXPECT(<, ExpectLess, "a < b")
+CZTEST_DEFINE_EXPECT(<=, ExpectLessEqual, "a <= b")
+CZTEST_DEFINE_EXPECT(>, ExpectGreater, "a > b")
+CZTEST_DEFINE_EXPECT(>=, ExpectGreaterEqual, "a >= b")
 
-#undef CZTEST_DEFINE_COMPARE
+#undef CZTEST_DEFINE_EXPECT
 
-inline AssertionResult CompareTrue(bool value, const char* expr) {
+[[nodiscard]] inline AssertionResult ExpectTrue(bool value, std::string_view expr = "condition") {
   if (value) return AssertionResult::Success();
   std::string msg = "Expected: ";
   msg += expr;
@@ -269,7 +341,7 @@ inline AssertionResult CompareTrue(bool value, const char* expr) {
   return AssertionResult::Failure(std::move(msg));
 }
 
-inline AssertionResult CompareFalse(bool value, const char* expr) {
+[[nodiscard]] inline AssertionResult ExpectFalse(bool value, std::string_view expr = "condition") {
   if (!value) return AssertionResult::Success();
   std::string msg = "Expected: ";
   msg += expr;
@@ -277,36 +349,31 @@ inline AssertionResult CompareFalse(bool value, const char* expr) {
   return AssertionResult::Failure(std::move(msg));
 }
 
-inline AssertionResult CompareStringEqual(const char* a, const char* b, const char* expr_a,
-                                          const char* expr_b) {
-  const bool equal = (a == nullptr || b == nullptr) ? (a == b) : (std::strcmp(a, b) == 0);
-  if (equal) return AssertionResult::Success();
-  std::string msg = "Expected: ";
-  msg += expr_a;
-  msg += " == ";
-  msg += expr_b;
-  msg += "\n  Actual: ";
-  msg += PrintValue(a);
-  msg += " vs ";
-  msg += PrintValue(b);
-  return AssertionResult::Failure(std::move(msg));
+[[nodiscard]] inline AssertionResult ExpectStringEqual(const char* a, const char* b,
+                                                       std::string_view expr_a = "a",
+                                                       std::string_view expr_b = "b") {
+  if (detail::StringEquals(a, b)) return AssertionResult::Success();
+  return AssertionResult::Failure(detail::ComparisonMessage(
+      std::string(expr_a) + " == " + std::string(expr_b), detail::PrintValue(a),
+      detail::PrintValue(b)));
 }
 
-inline AssertionResult CompareStringNotEqual(const char* a, const char* b, const char* expr_a,
-                                             const char* expr_b) {
-  const bool equal = (a == nullptr || b == nullptr) ? (a == b) : (std::strcmp(a, b) == 0);
-  if (!equal) return AssertionResult::Success();
+[[nodiscard]] inline AssertionResult ExpectStringNotEqual(const char* a, const char* b,
+                                                          std::string_view expr_a = "a",
+                                                          std::string_view expr_b = "b") {
+  if (!detail::StringEquals(a, b)) return AssertionResult::Success();
   std::string msg = "Expected: ";
   msg += expr_a;
   msg += " != ";
   msg += expr_b;
   msg += "\n  Actual: both are ";
-  msg += PrintValue(a);
+  msg += detail::PrintValue(a);
   return AssertionResult::Failure(std::move(msg));
 }
 
-inline AssertionResult CompareDoubleNear(double a, double b, double tolerance, const char* expr_a,
-                                         const char* expr_b) {
+[[nodiscard]] inline AssertionResult ExpectNear(double a, double b, double tolerance,
+                                                 std::string_view expr_a = "a",
+                                                 std::string_view expr_b = "b") {
   const double diff = a > b ? a - b : b - a;
   if (diff <= tolerance) return AssertionResult::Success();
   std::string msg = "Expected: ";
@@ -314,19 +381,20 @@ inline AssertionResult CompareDoubleNear(double a, double b, double tolerance, c
   msg += " ~= ";
   msg += expr_b;
   msg += "\n  Actual: ";
-  msg += PrintValue(a);
+  msg += detail::PrintValue(a);
   msg += " vs ";
-  msg += PrintValue(b);
+  msg += detail::PrintValue(b);
   msg += " (difference ";
-  msg += PrintValue(diff);
+  msg += detail::PrintValue(diff);
   msg += " > tolerance ";
-  msg += PrintValue(tolerance);
+  msg += detail::PrintValue(tolerance);
   msg += ")";
   return AssertionResult::Failure(std::move(msg));
 }
 
 template <class E, class F>
-AssertionResult CompareThrow(F&& fn, const char* expr, const char* type_name) {
+[[nodiscard]] AssertionResult ExpectThrow(F&& fn, std::string_view expr = "statement",
+                                          std::string_view type_name = "the exception type") {
   try {
     fn();
   } catch (const E&) {
@@ -348,7 +416,7 @@ AssertionResult CompareThrow(F&& fn, const char* expr, const char* type_name) {
 }
 
 template <class F>
-AssertionResult CompareNoThrow(F&& fn, const char* expr) {
+[[nodiscard]] AssertionResult ExpectNoThrow(F&& fn, std::string_view expr = "statement") {
   try {
     fn();
   } catch (const std::exception& e) {
@@ -368,7 +436,7 @@ AssertionResult CompareNoThrow(F&& fn, const char* expr) {
 }
 
 template <class F>
-AssertionResult CompareAnyThrow(F&& fn, const char* expr) {
+[[nodiscard]] AssertionResult ExpectAnyThrow(F&& fn, std::string_view expr = "statement") {
   try {
     fn();
   } catch (...) {
@@ -380,97 +448,75 @@ AssertionResult CompareAnyThrow(F&& fn, const char* expr) {
   return AssertionResult::Failure(std::move(msg));
 }
 
-}  // namespace detail
-
 // ---------------------------------------------------------------------------
 // Assertion macros
 // ---------------------------------------------------------------------------
-#define CZTEST_AMBIGUOUS_ELSE_BLOCKER_ \
-  switch (0)                          \
-  case 0:                             \
-  default:  // NOLINT
+//
+// The macros are thin sugar over the cztest::Expect* functions.  The "if
+// (init; cond)" form is used on purpose: the inner if carries its own else
+// branch, so a user written
+//
+//   if (x) EXPECT_EQ(a, b); else DoSomething();
+//
+// still binds the else to the user's if.  That is why no "ambiguous else"
+// blocker is needed here.
+//
+// The location of the failure is taken from std::source_location, so it points
+// at the assertion in the test source -- including the enclosing function.
+#define CZTEST_CHECK_(result, fatal)                                                  \
+  if (auto cztest_result = (result); cztest_result.ok) {                             \
+  } else                                                                              \
+    ::cztest::detail::FailureRecorder(::std::source_location::current(), fatal) =     \
+        (::cztest::detail::Message(cztest_result.message))
 
-#define CZTEST_NONFATAL_FAILURE_(message) \
-  ::cztest::detail::FailureRecorder(__FILE__, __LINE__, false) = (message)
-
-#define CZTEST_FATAL_FAILURE_(message) \
-  ::cztest::detail::FailureRecorder(__FILE__, __LINE__, true) = (message)
-
-#define CZTEST_ASSERT_(expression, on_failure)                     \
-  CZTEST_AMBIGUOUS_ELSE_BLOCKER_                                   \
-  if (const ::cztest::detail::AssertionResult ctst_result =       \
-          (expression)) {                                         \
-  } else                                                          \
-    on_failure(::cztest::detail::Message(ctst_result.message))
-
-#define CZTEST_TEST_BOOLEAN_(expression, text, expected, on_failure) \
-  CZTEST_ASSERT_(::cztest::detail::Compare##expected((expression), text), on_failure)
+#define CZTEST_EXPECT_(result) CZTEST_CHECK_((result), false)
+#define CZTEST_ASSERT_(result) CZTEST_CHECK_((result), true)
 
 // EXPECT_* / ASSERT_* ---------------------------------------------------
-#define EXPECT_TRUE(condition) \
-  CZTEST_TEST_BOOLEAN_((condition), #condition, True, CZTEST_NONFATAL_FAILURE_)
-#define EXPECT_FALSE(condition) \
-  CZTEST_TEST_BOOLEAN_((condition), #condition, False, CZTEST_NONFATAL_FAILURE_)
-#define ASSERT_TRUE(condition) \
-  CZTEST_TEST_BOOLEAN_((condition), #condition, True, CZTEST_FATAL_FAILURE_)
-#define ASSERT_FALSE(condition) \
-  CZTEST_TEST_BOOLEAN_((condition), #condition, False, CZTEST_FATAL_FAILURE_)
+#define EXPECT_TRUE(condition) CZTEST_EXPECT_(::cztest::ExpectTrue((condition), #condition))
+#define EXPECT_FALSE(condition) CZTEST_EXPECT_(::cztest::ExpectFalse((condition), #condition))
+#define ASSERT_TRUE(condition) CZTEST_ASSERT_(::cztest::ExpectTrue((condition), #condition))
+#define ASSERT_FALSE(condition) CZTEST_ASSERT_(::cztest::ExpectFalse((condition), #condition))
 
-#define CZTEST_TEST_COMPARE_(op, a, b, on_failure) \
-  CZTEST_ASSERT_(::cztest::detail::Compare##op((a), (b), #a, #b), on_failure)
+#define EXPECT_EQ(a, b) CZTEST_EXPECT_(::cztest::ExpectEqual((a), (b), #a " == " #b))
+#define EXPECT_NE(a, b) CZTEST_EXPECT_(::cztest::ExpectNotEqual((a), (b), #a " != " #b))
+#define EXPECT_LT(a, b) CZTEST_EXPECT_(::cztest::ExpectLess((a), (b), #a " < " #b))
+#define EXPECT_LE(a, b) CZTEST_EXPECT_(::cztest::ExpectLessEqual((a), (b), #a " <= " #b))
+#define EXPECT_GT(a, b) CZTEST_EXPECT_(::cztest::ExpectGreater((a), (b), #a " > " #b))
+#define EXPECT_GE(a, b) CZTEST_EXPECT_(::cztest::ExpectGreaterEqual((a), (b), #a " >= " #b))
 
-#define EXPECT_EQ(a, b) CZTEST_TEST_COMPARE_(Equal, a, b, CZTEST_NONFATAL_FAILURE_)
-#define EXPECT_NE(a, b) CZTEST_TEST_COMPARE_(NotEqual, a, b, CZTEST_NONFATAL_FAILURE_)
-#define EXPECT_LT(a, b) CZTEST_TEST_COMPARE_(Less, a, b, CZTEST_NONFATAL_FAILURE_)
-#define EXPECT_LE(a, b) CZTEST_TEST_COMPARE_(LessEqual, a, b, CZTEST_NONFATAL_FAILURE_)
-#define EXPECT_GT(a, b) CZTEST_TEST_COMPARE_(Greater, a, b, CZTEST_NONFATAL_FAILURE_)
-#define EXPECT_GE(a, b) CZTEST_TEST_COMPARE_(GreaterEqual, a, b, CZTEST_NONFATAL_FAILURE_)
+#define ASSERT_EQ(a, b) CZTEST_ASSERT_(::cztest::ExpectEqual((a), (b), #a " == " #b))
+#define ASSERT_NE(a, b) CZTEST_ASSERT_(::cztest::ExpectNotEqual((a), (b), #a " != " #b))
+#define ASSERT_LT(a, b) CZTEST_ASSERT_(::cztest::ExpectLess((a), (b), #a " < " #b))
+#define ASSERT_LE(a, b) CZTEST_ASSERT_(::cztest::ExpectLessEqual((a), (b), #a " <= " #b))
+#define ASSERT_GT(a, b) CZTEST_ASSERT_(::cztest::ExpectGreater((a), (b), #a " > " #b))
+#define ASSERT_GE(a, b) CZTEST_ASSERT_(::cztest::ExpectGreaterEqual((a), (b), #a " >= " #b))
 
-#define ASSERT_EQ(a, b) CZTEST_TEST_COMPARE_(Equal, a, b, CZTEST_FATAL_FAILURE_)
-#define ASSERT_NE(a, b) CZTEST_TEST_COMPARE_(NotEqual, a, b, CZTEST_FATAL_FAILURE_)
-#define ASSERT_LT(a, b) CZTEST_TEST_COMPARE_(Less, a, b, CZTEST_FATAL_FAILURE_)
-#define ASSERT_LE(a, b) CZTEST_TEST_COMPARE_(LessEqual, a, b, CZTEST_FATAL_FAILURE_)
-#define ASSERT_GT(a, b) CZTEST_TEST_COMPARE_(Greater, a, b, CZTEST_FATAL_FAILURE_)
-#define ASSERT_GE(a, b) CZTEST_TEST_COMPARE_(GreaterEqual, a, b, CZTEST_FATAL_FAILURE_)
+#define EXPECT_STREQ(a, b) CZTEST_EXPECT_(::cztest::ExpectStringEqual((a), (b), #a, #b))
+#define EXPECT_STRNE(a, b) CZTEST_EXPECT_(::cztest::ExpectStringNotEqual((a), (b), #a, #b))
+#define ASSERT_STREQ(a, b) CZTEST_ASSERT_(::cztest::ExpectStringEqual((a), (b), #a, #b))
+#define ASSERT_STRNE(a, b) CZTEST_ASSERT_(::cztest::ExpectStringNotEqual((a), (b), #a, #b))
 
-#define EXPECT_STREQ(a, b) \
-  CZTEST_ASSERT_(::cztest::detail::CompareStringEqual((a), (b), #a, #b), CZTEST_NONFATAL_FAILURE_)
-#define EXPECT_STRNE(a, b) \
-  CZTEST_ASSERT_(::cztest::detail::CompareStringNotEqual((a), (b), #a, #b), CZTEST_NONFATAL_FAILURE_)
-#define ASSERT_STREQ(a, b) \
-  CZTEST_ASSERT_(::cztest::detail::CompareStringEqual((a), (b), #a, #b), CZTEST_FATAL_FAILURE_)
-#define ASSERT_STRNE(a, b) \
-  CZTEST_ASSERT_(::cztest::detail::CompareStringNotEqual((a), (b), #a, #b), CZTEST_FATAL_FAILURE_)
+#define EXPECT_NEAR(a, b, tolerance) CZTEST_EXPECT_(::cztest::ExpectNear((a), (b), (tolerance), #a, #b))
+#define ASSERT_NEAR(a, b, tolerance) CZTEST_ASSERT_(::cztest::ExpectNear((a), (b), (tolerance), #a, #b))
 
-#define EXPECT_NEAR(a, b, tolerance) \
-  CZTEST_ASSERT_(::cztest::detail::CompareDoubleNear((a), (b), (tolerance), #a, #b), CZTEST_NONFATAL_FAILURE_)
-#define ASSERT_NEAR(a, b, tolerance) \
-  CZTEST_ASSERT_(::cztest::detail::CompareDoubleNear((a), (b), (tolerance), #a, #b), CZTEST_FATAL_FAILURE_)
-
-#define EXPECT_THROW(statement, exception_type)                                          \
-  CZTEST_ASSERT_(::cztest::detail::CompareThrow<exception_type>(                           \
-                     [&]() { statement; }, #statement, #exception_type),                \
-                CZTEST_NONFATAL_FAILURE_)
-#define ASSERT_THROW(statement, exception_type)                                          \
-  CZTEST_ASSERT_(::cztest::detail::CompareThrow<exception_type>(                           \
-                     [&]() { statement; }, #statement, #exception_type),                \
-                CZTEST_FATAL_FAILURE_)
+#define EXPECT_THROW(statement, exception_type) \
+  CZTEST_EXPECT_(::cztest::ExpectThrow<exception_type>([&]() { statement; }, #statement, #exception_type))
+#define ASSERT_THROW(statement, exception_type) \
+  CZTEST_ASSERT_(::cztest::ExpectThrow<exception_type>([&]() { statement; }, #statement, #exception_type))
 #define EXPECT_NO_THROW(statement) \
-  CZTEST_ASSERT_(::cztest::detail::CompareNoThrow([&]() { statement; }, #statement), \
-                CZTEST_NONFATAL_FAILURE_)
+  CZTEST_EXPECT_(::cztest::ExpectNoThrow([&]() { statement; }, #statement))
 #define ASSERT_NO_THROW(statement) \
-  CZTEST_ASSERT_(::cztest::detail::CompareNoThrow([&]() { statement; }, #statement), \
-                CZTEST_FATAL_FAILURE_)
+  CZTEST_ASSERT_(::cztest::ExpectNoThrow([&]() { statement; }, #statement))
 #define EXPECT_ANY_THROW(statement) \
-  CZTEST_ASSERT_(::cztest::detail::CompareAnyThrow([&]() { statement; }, #statement), \
-                CZTEST_NONFATAL_FAILURE_)
+  CZTEST_EXPECT_(::cztest::ExpectAnyThrow([&]() { statement; }, #statement))
 #define ASSERT_ANY_THROW(statement) \
-  CZTEST_ASSERT_(::cztest::detail::CompareAnyThrow([&]() { statement; }, #statement), \
-                CZTEST_FATAL_FAILURE_)
+  CZTEST_ASSERT_(::cztest::ExpectAnyThrow([&]() { statement; }, #statement))
 
-#define ADD_FAILURE() CZTEST_NONFATAL_FAILURE_(::cztest::detail::Message())
-#define FAIL() CZTEST_FATAL_FAILURE_(::cztest::detail::Message())
+#define ADD_FAILURE() CZTEST_EXPECT_(::cztest::AssertionResult::Failure(""))
+#define FAIL() CZTEST_ASSERT_(::cztest::AssertionResult::Failure(""))
 #define SUCCEED() ((void)0)
+
 
 // ---------------------------------------------------------------------------
 // Test registration
@@ -481,8 +527,7 @@ struct TestInfo {
   std::string suite;
   std::string name;
   std::function<void()> body;
-  const char* file{""};
-  int line{0};
+  std::source_location location{};
 
   std::string full_name() const { return suite + "." + name; }
 };
@@ -504,8 +549,9 @@ class Registry {
 
 class Registrar {
  public:
-  Registrar(const char* suite, const char* name, const char* file, int line, std::function<void()> body) {
-    Registry::Get().Add(TestInfo{suite, name, std::move(body), file, line});
+  Registrar(const char* suite, const char* name, std::source_location location,
+             std::function<void()> body) {
+    Registry::Get().Add(TestInfo{suite, name, std::move(body), location});
   }
 };
 
@@ -530,7 +576,7 @@ class Test {
       ::cztest::detail::TestContext&);                                                          \
   static const ::cztest::detail::Registrar CZTEST_CONCAT(                                         \
       cztest_reg_, CZTEST_CONCAT(suite, CZTEST_CONCAT(_, name)))(                                  \
-      #suite, #name, __FILE__, __LINE__,                                                        \
+      #suite, #name, ::std::source_location::current(),                                                        \
       [] {                                                                                      \
         CZTEST_CONCAT(cztest_body_, CZTEST_CONCAT(suite, CZTEST_CONCAT(_, name)))(                  \
             *::cztest::detail::TestContext::Current());                                          \
@@ -547,7 +593,7 @@ class Test {
   };                                                                                           \
   const ::cztest::detail::Registrar CZTEST_CONCAT(cztest_fixture_,                                \
                                                  CZTEST_CONCAT(fixture, CZTEST_CONCAT(_, name)))   \
-      ::registrar_(#fixture, #name, __FILE__, __LINE__, [] {                                    \
+      ::registrar_(#fixture, #name, ::std::source_location::current(), [] {                                    \
         CZTEST_CONCAT(cztest_fixture_, CZTEST_CONCAT(fixture, CZTEST_CONCAT(_, name))) instance;    \
         static_cast<::cztest::Test&>(instance).SetUp();                                         \
         instance.TestBody();                                                                   \
@@ -636,6 +682,19 @@ class Console {
   bool color_;
 };
 
+/// Renders a source location as "file:line (function)".
+inline std::string DescribeLocation(std::source_location location) {
+  std::string text = location.file_name();
+  text += ":";
+  text += std::to_string(location.line());
+  if (location.function_name() != nullptr && *location.function_name() != '\0') {
+    text += " (";
+    text += location.function_name();
+    text += ")";
+  }
+  return text;
+}
+
 class TestRunner {
  public:
   explicit TestRunner(const RunOptions& options) : options_(options) {}
@@ -684,8 +743,7 @@ class TestRunner {
           // failure, even in quiet mode.
           console.Print("\033[0;31m", "[  FAILED  ] " + test->full_name());
           for (const auto& failure : result.failures) {
-            console.Print(nullptr, failure.file + ":" + std::to_string(failure.line) +
-                                        ": Failure\n" + failure.message);
+            console.Print(nullptr, DescribeLocation(failure.location) + ": Failure\n" + failure.message);
           }
         } else if (!quiet) {
           console.Print("\033[0;32m", "[       OK ] " + test->full_name());
@@ -734,10 +792,9 @@ class TestRunner {
     } catch (const FatalAssertionFailure&) {
       // The assertion already reported the failure; abort the test body.
     } catch (const std::exception& e) {
-      ctx->AddFailure(test.file, test.line,
-                      std::string("Unexpected exception: ") + e.what());
+      ctx->AddFailure(test.location, std::string("Unexpected exception: ") + e.what());
     } catch (...) {
-      ctx->AddFailure(test.file, test.line, "Unexpected unknown exception");
+      ctx->AddFailure(test.location, "Unexpected unknown exception");
     }
 
     SingleResult result;

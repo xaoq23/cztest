@@ -68,28 +68,24 @@ class MockFailure : public std::exception {
 namespace detail {
 
 // ---------------------------------------------------------------------------
-// The expectation site (file/line) of the EXPECT_CALL that created it.
+// The source location of the EXPECT_CALL that created the expectation.
 // ---------------------------------------------------------------------------
-struct ExpectationSite {
-  const char* file{nullptr};
-  int line{0};
-};
 
-inline ExpectationSite& CurrentSite() {
-  static thread_local ExpectationSite site{nullptr, 0};
+inline std::source_location& CurrentSite() {
+  static thread_local std::source_location site{};
   return site;
 }
 
 class SiteGuard {
  public:
-  SiteGuard(const char* file, int line) : previous_(CurrentSite()) { CurrentSite() = {file, line}; }
+  SiteGuard(std::source_location location) : previous_(CurrentSite()) { CurrentSite() = location; }
   ~SiteGuard() { CurrentSite() = previous_; }
 
  private:
-  ExpectationSite previous_;
+  std::source_location previous_;
 };
 
-inline SiteGuard MakeSite(const char* file, int line) { return SiteGuard(file, line); }
+inline SiteGuard MakeSite(std::source_location location) { return SiteGuard(location); }
 
 // ---------------------------------------------------------------------------
 // Type erased view of one expectation.
@@ -103,7 +99,7 @@ class ExpectationEntry {
   virtual bool Saturated() const = 0;
   virtual bool Satisfied() const = 0;
   virtual std::string Describe() const = 0;
-  virtual ExpectationSite Site() const = 0;
+  virtual std::source_location Site() const = 0;
 };
 
 // Storage for the return value of a mocked function.  Reference returning
@@ -153,7 +149,7 @@ class Expectation final : public ExpectationEntry {
   using Action = std::function<Ret(Args...)>;
   using MatcherTuple = std::tuple<Matcher<std::decay_t<Args>>...>;
 
-  Expectation(std::string name, MatcherTuple matchers, ExpectationSite site)
+  Expectation(std::string name, MatcherTuple matchers, std::source_location site)
       : name_(std::move(name)), matchers_(std::move(matchers)), site_(site) {}
 
   // --- ExpectationEntry --------------------------------------------------
@@ -174,7 +170,7 @@ class Expectation final : public ExpectationEntry {
   void CountCall() override {
     ++count_;
     if (count_ > 1 && !has_explicit_action_ && !explicit_cardinality_) {
-      ReportFailure(site_.file, site_.line,
+      ReportFailure(site_,
                     "Mocked function '" + name_ + "' was called " + std::to_string(count_) +
                         " time(s). Use WillRepeatedly() to allow repeated calls.",
                     false);
@@ -201,7 +197,7 @@ class Expectation final : public ExpectationEntry {
     return message;
   }
 
-  ExpectationSite Site() const override { return site_; }
+  std::source_location Site() const override { return site_; }
 
   // --- configuration -----------------------------------------------------
   void SetCardinality(Cardinality cardinality) {
@@ -255,7 +251,7 @@ class Expectation final : public ExpectationEntry {
 
   std::string name_;
   MatcherTuple matchers_;
-  ExpectationSite site_;
+  std::source_location site_;
   std::vector<Action> once_actions_;
   Action default_action_;
   bool has_explicit_action_{false};
@@ -370,7 +366,7 @@ inline void MockBase::Verify() {
     for (const auto& expectation : entry.second) {
       if (!expectation->Satisfied()) {
         const auto site = expectation->Site();
-        detail::ReportFailure(site.file, site.line,
+        detail::ReportFailure(site,
                               "Mock expectation failed: " + expectation->Describe(), false);
       }
     }
@@ -391,7 +387,7 @@ Ret MockInvoke(const MockBase& mock, const char* name, Args&... args) {
   bool saturated = false;
   auto* entry = mock.FindExpectation(name, arg_ptrs, &saturated);
   if (entry == nullptr) {
-    ReportFailure(nullptr, 0, DescribeCall(name, args...), false);
+    ReportFailure(std::source_location::current(), DescribeCall(name, args...), false);
     if constexpr (std::is_void_v<Ret>) {
       return;
     } else if constexpr (std::is_lvalue_reference_v<Ret>) {
@@ -405,7 +401,7 @@ Ret MockInvoke(const MockBase& mock, const char* name, Args&... args) {
     }
   }
   if (saturated) {
-    ReportFailure(nullptr, 0,
+    ReportFailure(std::source_location::current(),
                   "Mocked function '" + std::string(name) + "' was called more times than expected: " +
                       entry->Describe(),
                   false);
@@ -652,7 +648,7 @@ auto Invoke(F callable) {
 //   EXPECT_CALL(mock, Get(42)).Times(1).WillOnce(Return(7));
 //   EXPECT_CALL(mock, Log(HasSubstr("error"))).Times(AnyNumber());
 #define EXPECT_CALL(obj, call) \
-  (::cztest::detail::MakeSite(__FILE__, __LINE__), (obj).gmock_##call)
+  (::cztest::detail::MakeSite(::std::source_location::current()), (obj).gmock_##call)
 
 }  // namespace cztest
 
