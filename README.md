@@ -5,9 +5,20 @@
 
 * 头文件 only：`#include <cztest/cztest.hpp>` 即可
 * 函数级 mock：逐个函数声明期望、匹配参数、校验调用次数
-* C++17 起可用（已在 GCC 16 / Clang 22 上验证，C++17 与 C++20 均可）
+* **C++20 起可用**（`std::source_location` 等现代特性；不承诺 C++17 及以下）
 * 自带测试运行器：过滤、列表、JUnit XML 报告、彩色输出
 * 与 [cizon2](https://github.com/cizon-dev/cizon) 构建工具无缝配合（`-Iinclude` 由 cizon2 自动添加）
+
+## 定位
+
+**cztest 是 cizon2 生态的第一方测试框架**，不是 gtest 的兼容层：
+
+| | 说明 |
+| --- | --- |
+| **为 cizon2 而生** | 退出码契约（0 = 通过）与 `kind = "test"` target 配套；`--filter` / `--junit` 经 `cizon2 test --` 直接透传；作为依赖时零编译单元、零链接、不需要 `system_links` |
+| **现代 C++，不背老包袱** | 最低 C++20；断言核心是普通函数而不是宏魔法；判定谓词是 `constexpr` 的；失败位置用 `std::source_location`，带函数名 |
+| **不追求 gtest 兼容** | 宏名（`TEST` / `EXPECT_*`）沿用以降低迁移成本，但实现不继承 gtest 的历史包袱：不支持 mock 自由函数（那是符号替换，Windows 上不可移植且需要编译单元），只支持虚方法 |
+| **取舍写在这里** | 换来的：4 个头文件、零依赖、`-I` 即用。放弃的：自由函数 mock、nice/strict mock 变体、全局 mock 环境 |
 
 ## 命名约定
 
@@ -90,6 +101,27 @@ CZTEST_MAIN();     // 只在一个 .cpp 里写
 
 ## 断言
 
+断言的核心是**普通函数**，宏只是薄薄一层糖：
+
+```cpp
+namespace cztest {
+
+// 判定谓词：constexpr，可在 static_assert 里用
+constexpr bool Equal(const A& a, const B& b);
+
+// 断言函数：返回 AssertionResult
+AssertionResult ExpectEqual(const A& a, const B& b, std::string_view expr = "a == b");
+AssertionResult ExpectTrue(bool value, std::string_view expr = "condition");
+// ExpectNotEqual / ExpectLess / ExpectLessEqual / ExpectGreater /
+// ExpectGreaterEqual / ExpectStringEqual / ExpectStringNotEqual /
+// ExpectNear / ExpectThrow<E> / ExpectNoThrow / ExpectAnyThrow
+
+// 上报一次失败
+void ReportFailure(std::source_location location, std::string message, bool fatal = false);
+
+}
+```
+
 | 宏 | 说明 |
 | --- | --- |
 | `EXPECT_TRUE(x)` / `EXPECT_FALSE(x)` | 布尔判断 |
@@ -106,6 +138,35 @@ EXPECT_EQ(result.size(), 3) << "expected three items, got " << result.size();
 ```
 
 `EXPECT_*` 记录失败后继续执行，`ASSERT_*` 记录失败后终止当前用例。
+
+### 直接用函数（不写宏）
+
+需要根据断言结果分支时，可以直接调用函数：
+
+```cpp
+if (auto result = cztest::ExpectEqual(a, b); !result) {
+  cztest::ReportFailure(std::source_location::current(), result.message);
+}
+```
+
+### 编译期检查
+
+判定谓词是 `constexpr` 的，所以可以在编译期就检查：
+
+```cpp
+static_assert(cztest::Equal(1 + 1, 2));
+```
+
+### 失败位置带函数名
+
+失败位置来自 `std::source_location`，所以报告里能看出断言发生在哪个函数里：
+
+```
+[  FAILED  ] Modern.ReportsTheEnclosingFunction
+C:\...\tests\test_modern.cpp:9 (int demo::Helper(int)): Failure
+Expected: value == 42
+  Actual: 1 vs 42
+```
 
 ---
 
