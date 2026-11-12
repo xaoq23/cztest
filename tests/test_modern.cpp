@@ -37,6 +37,26 @@ TEST(Modern, ExpectFunctionsCoverEveryAssertion) {
 }
 
 // --- a test can branch on the outcome without using a macro ----------------
+// --- the macro parameters must not leak into the user's expressions -------
+//
+// A macro parameter that appears in the user's expression would be
+// substituted into it, so variables with such names have to keep working.
+TEST(Modern, VariablesNamedLikeMacroParametersAreFine) {
+    const int result = 2;
+    const int a = 2;
+    const int b = 2;
+    const bool condition = true;
+    const int statement = 2;
+
+    EXPECT_EQ(result, 2);
+    EXPECT_EQ(a, b);
+    EXPECT_TRUE(condition);
+    EXPECT_EQ(statement, 2);
+    EXPECT_STREQ("x", "x");
+    EXPECT_NEAR(1.0, 1.0, 0.1);
+    EXPECT_NO_THROW((void)statement);
+}
+
 TEST(Modern, AssertionsCanBeUsedAsFunctions) {
   const int left = 3;
   const int right = 3;
