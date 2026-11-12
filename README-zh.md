@@ -11,7 +11,7 @@ TEST(Math, Addition) {
 }
 ```
 
-- **纯头文件** —— 5 个头文件，零依赖，无需链接任何东西
+- **纯头文件** —— 6 个头文件，零依赖，无需链接任何东西
 - **函数级 mock** —— 按方法声明期望、匹配参数、校验调用次数
 - **C++20 优先** —— `std::source_location`、concepts、`std::span`、`std::string_view`
 - **自带运行器** —— 过滤、列表、JUnit XML、彩色输出
@@ -28,7 +28,7 @@ TEST(Math, Addition) {
 | 语言标准 | C++20（`std::source_location`、concepts） |
 | 依赖 | 无，只用标准库 |
 | 编译器基线 | GCC 11+、Clang 14+、MSVC 19.30+（实测 GCC 16.2 与 Clang 22） |
-| mock | 虚方法，每个方法一组期望 |
+| mock | 虚方法，每个方法按参数形状各有一组期望 |
 | 明确不做 | mock 自由函数、全局 mock 状态、death test |
 
 ### 和常见框架的对比
@@ -315,6 +315,18 @@ mock 是严格的 ✓：没有匹配到任何期望的调用会立刻失败 ✓ 
 次数没满足的期望在用例结束时报告 ✓。
 调用次数超过期望上限时 ✓，失败会指向那条期望所在的行 ✓。
 
+**多条期望同时匹配同一次调用时 ✓，最后设置的那条生效 ✓** —— 之前设置的成为兜底 ✓。
+这是 GoogleMock 的规则 ✓，所以期望要从下往上读 ✓：
+
+```cpp
+EXPECT_CALL(http, Get(cztest::Any(), cztest::Any())).WillRepeatedly(cztest::Return(false));
+EXPECT_CALL(http, Get("https://x/y", cztest::Any())).WillOnce(cztest::Return(true));
+// 第二条回答 "https://x/y" ✓ 第一条回答其余的调用 ✓。
+```
+
+一个 mock 只属于一个用例 ✓：在用例体里创建它 ✓。这样每次运行用例都从干净的期望开始 ✓，
+`--repeat` 需要的正是这一点 ✓。
+
 #### 匹配器
 
 `Eq` `Ne` `Lt` `Le` `Gt` `Ge` `Any` `Not` `StrEq` `HasSubstr` `StartsWith` `EndsWith`
@@ -349,6 +361,9 @@ CZTEST_MOCK_COMPLETE(MockHttp);     // mock 必须实现了接口的所有方法
 
 方法签名和接口不一致的情况，`override` 本身就会在宏那一行报错 ✓。
 
+`CZTEST_MOCK_INTERFACE` 需要接口的**完整**类型 ✓ —— 它要检查虚析构 ✓，
+只写了前向声明的接口没法检查 ✓。
+
 #### 线程安全边界
 
 **mock 不是线程安全的** ✓：调用计数和期望表都是没有锁的普通成员 ✓。
@@ -357,7 +372,8 @@ CZTEST_MOCK_COMPLETE(MockHttp);     // mock 必须实现了接口的所有方法
 ## 运行器
 
 ```
---filter=<pattern>   只运行匹配的用例（支持 * 和 ? 通配符）
+--filter=<patterns>  只运行匹配的用例（支持 * 和 ? 通配符 ✓ 多个模式用 : 分隔 ✓
+                     以 - 开头的模式表示排除 ✓）
 --list               列出所有用例后退出
 --repeat=<n>         每个用例重复运行 n 次
 --quiet / -q         只输出失败详情和汇总
@@ -372,6 +388,13 @@ CZTEST_MOCK_COMPLETE(MockHttp);     // mock 必须实现了接口的所有方法
 ```bash
 ./tests --filter=Mock.*
 ./tests --filter="Basic/TrimTest.RemovesTheSpaces/1"
+```
+
+过滤器用的是 GoogleTest 的语法 ✓：多个模式用冒号分隔 ✓，以 `-` 开头的模式把匹配的用例排除掉 ✓：
+
+```bash
+./tests --filter="Mock.*:-Mock.Slow"   # 所有 mock，除了慢的那个 ✓
+./tests --filter="-Mock.Slow"           # 除了慢的那个，全跑 ✓
 ```
 
 过滤器匹配不到任何用例时 ✓ 一个用例都不会跑 ✓ —— 在 CI 的日志里很容易被忽略 ✓，
@@ -407,11 +430,11 @@ Expected: Get(1) == 2
 
 退出码：全部通过或跳过是 0 ✓，否则是 1 ✓。
 
-JUnit 报告里带着失败的完整信息 ✓，也会标记被跳过的用例 ✓ —— CI 的面板因此能显示
-到底哪里出了问题 ✓：
+JUnit 报告里带着失败的完整信息 ✓，会标记被跳过的用例 ✓，也记着每个用例花了多久 ✓ ——
+CI 的面板因此能显示到底哪里出了问题 ✓，也能画出这次运行的时间线 ✓：
 
 ```xml
-<testcase classname="Mock" name="SequenceOfActions">
+<testcase classname="Mock" name="SequenceOfActions" time="0.000021">
   <failure message="Expected: Get(1) == 2">C:\path\tests\test_mock.cpp:31: Expected: Get(1) == 2
   Actual: 1 vs 2</failure>
 </testcase>
@@ -545,6 +568,10 @@ error: static assertion failed: cztest has no ON_CALL. Use EXPECT_CALL(mock, Met
 mock 方法由 `override` 对照接口检查 ✓，两个护栏覆盖虚析构和漏掉的方法 ✓，
 用例名由 `consteval` 函数检查 ✓。
 
+**类型擦除不丢类型。** 被 mock 的函数的参数以「指向 const 的指针」的形式送到期望里 ✓，
+期望再把它们转回精确的参数类型 ✓ —— 所以 `const T&` 的参数一路保持 const ✓，
+只有 mock 自己拥有的参数才能被改写或移走 ✓。
+
 **报错要说该怎么做。** cztest 不支持的 GoogleTest 写法会给出替代方案 ✓，
 而不是一句 "not declared in this scope" ✓。
 
@@ -558,6 +585,8 @@ mock 方法由 `override` 对照接口检查 ✓，两个护栏覆盖虚析构�
 - mock 方法的参数类型必须与接口**完全一致** ✓，`const` 和引用都要写全 ✓。
 - 无参数的 mock 方法要用 `CZTEST_MOCK_NOARG_METHOD` ✓。
 - 一个 mock 方法最多 8 个参数 ✓。
+- `CZTEST_MOCK_INTERFACE` 需要接口的完整类型 ✓。
+- 一个 mock 只属于一个用例 ✓：活得比用例体还久的 mock 会保留状态 ✓，也不会再被校验 ✓。
 - mock 不是线程安全的 ✓。
 - 没有 death test ✓、没有 typed test ✓、不能用 GoogleMock 的匹配器写 `EXPECT_THAT` ✓。
 

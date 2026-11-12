@@ -68,6 +68,8 @@ cizon2 test
 
 - 框架是**纯头文件**的，只要 `include/` 在头文件搜索路径里就能用（cizon2 会自动加）
 - `TEST(套件名, 用例名)` 声明一个用例；套件名只是给用例分组用的，随便起
+- 用例名不能含空格、冒号和通配符（会破坏 `--filter` 的语法）✓ 这条由编译期检查 ✓
+- 两个用例不能同名 ✓ 运行器会在开跑前报出来 ✓
 - 断言失败时进程退出码为 1，CI 直接就能判断
 
 ---
@@ -286,6 +288,20 @@ class MockHttp : public IHttp, public cztest::MockBase {
 （`const`、引用都要写全）。const 成员函数用 `CZTEST_MOCK_CONST_METHOD`，无参数函数用
 `CZTEST_MOCK_NOARG_METHOD` / `CZTEST_MOCK_NOARG_CONST_METHOD`。
 
+两个编译期护栏可以放在 mock 类里：
+
+```cpp
+class MockHttp : public IHttp, public cztest::MockBase {
+ public:
+    CZTEST_MOCK_INTERFACE(IHttp);   // 接口必须有虚析构 ✓ 需要完整类型 ✓
+    CZTEST_MOCK_METHOD(bool, Get, const std::string&, std::string&);
+};
+CZTEST_MOCK_COMPLETE(MockHttp);     // mock 必须实现了接口的所有方法 ✓
+```
+
+`CZTEST_MOCK_INTERFACE` 要检查虚析构 ✓，所以接口必须是**完整类型** ✓ ——
+只写前向声明的接口没法检查 ✓。
+
 **第三步：设期望、注入、调用**
 
 ```cpp
@@ -348,8 +364,18 @@ EXPECT_CALL(mock, Get(IsEven{}));   // 只接受偶数
 - 一次调用**没有匹配到任何期望** → 立刻失败，并把实际参数打印出来
 - 期望的次数没满足 → 用例结束时失败
 - 期望被调用了多次但没设 `WillRepeatedly` → 失败并提示改用 `WillRepeatedly`
+- 调用次数超过期望的上限 → 失败，并指向那条期望所在的行
 
 所以 mock 天然逼着你把"这个依赖会被怎么用"写清楚。
+
+**多条期望匹配同一次调用时，最后设置的那条生效** ✓ —— 之前设置的成为兜底 ✓。
+这是 GoogleMock 的规则，期望要从下往上读：
+
+```cpp
+EXPECT_CALL(http, Get(cztest::Any(), cztest::Any())).WillRepeatedly(cztest::Return(false));
+EXPECT_CALL(http, Get("https://x/y", cztest::Any())).WillOnce(cztest::Return(true));
+// 第二条回答 "https://x/y" ✓ 第一条回答其余的调用 ✓。
+```
 
 ### 4.5 mock 的生命周期
 
@@ -363,6 +389,9 @@ TEST(X, Works) {
 ```
 
 作为夹具成员时，在用例结束时校验 ✓。
+
+一个 mock 只属于一个用例 ✓ —— 在用例体里创建它 ✓。这样每次运行用例都从干净的期望开始 ✓，
+`--repeat` 需要的正是这一点 ✓；活得比用例体还久的 mock 会保留状态 ✓，也不会再被校验 ✓。
 
 ---
 
@@ -522,11 +551,23 @@ cizon2 test integration_tests    # 每天一次 / 发版前跑
 
 ```bash
 cizon2 test -- --filter=Mock.*      # 按名字过滤（支持 * 和 ?）
+cizon2 test -- --filter="Mock.*:-Mock.Slow"  # 多个模式用 : 分隔，- 表示排除 ✓
 cizon2 test -- --list               # 列出所有用例
 cizon2 test -- --repeat=10          # 重复跑（查偶发失败）
 cizon2 test -- --quiet              # 只输出失败和汇总（CI 用）
 cizon2 test -- --junit=report.xml   # JUnit XML 报告（喂 CI）
 ```
+
+过滤器的语法和 GoogleTest 一样 ✓ ✓。
+
+`--repeat` 时每一行都会标明这是第几次运行 ✓ —— 偶发失败的用例一眼就能看出来 ✓：
+
+```
+[       OK ] Flaky.FailsOnTheSecondRun (run 1 of 3)
+[  FAILED  ] Flaky.FailsOnTheSecondRun (run 2 of 3)
+```
+
+JUnit 报告里带着失败信息 ✓、跳过标记 ✓ 和每个用例的耗时 ✓。
 
 ### 6.3 把 cztest 作为依赖
 
@@ -554,6 +595,8 @@ cizon2 会自动加上 `-Ideps/cztest/include`，所以依赖方**一行 `-I` �
 | 报 "was called more times than expected" | 调用次数超过了期望的上限 | 加 `.WillRepeatedly(...)` 或放宽 `.Times(n)` |
 | 报 "Mock expectation failed" | 期望的次数没满足 | 检查 `.Times(...)` 与实际调用次数 |
 | 报 "Duplicate test names" | 两个用例同名（多半在不同的文件里） | 改掉其中一个的名字 |
+| 报 "No test matched the filter" | 过滤器写错了，或者用例改名了 | 用 `--list` 看名字 |
+| 用 `EXPECT_OK` 编译报错 | `std::expected` 需要 C++23 | 改成 `-std=c++23`，或手写 `EXPECT_TRUE(result.has_value())` |
 | `cztest::Values(a, b,)` 编译报错 | 函数调用不能带尾逗号 | 去掉尾逗号 |
 | 宏里写了 `EXPECT_EQ(a, b) << "x"` 但 `else` 跑错了分支 | 不会发生：cztest 用 `if (init; cond)` 形式，用户自己的 `else` 仍然绑到用户的 `if` | — |
 | 断言位置显示的是奇怪函数名 | 断言在 helper 里 | 正常，helper 名会显示出来 |

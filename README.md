@@ -11,7 +11,7 @@ TEST(Math, Addition) {
 }
 ```
 
-- **Header only** — five headers, no dependencies, nothing to link.
+- **Header only** — six headers, no dependencies, nothing to link.
 - **Function level mocks** — expectations per method, argument matchers, call counts.
 - **C++20 first** — `std::source_location`, concepts, `std::span`, `std::string_view`.
 - **Its own runner** — filtering, listing, JUnit XML, colored output.
@@ -28,7 +28,7 @@ Version 0.3.0 (`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`).
 | Language level | C++20 (`std::source_location`, concepts) |
 | Dependencies | none, only the standard library |
 | Compiler baseline | GCC 11+, Clang 14+, MSVC 19.30+ (verified on GCC 16.2 and Clang 22) |
-| Mocking | virtual methods, one expectation per method |
+| Mocking | virtual methods, one expectation per method and argument shape |
 | Deliberately not | mocking free functions, global mock state, death tests |
 
 ### Compared with the usual suspects
@@ -323,6 +323,20 @@ arguments it received together with the expectations that were set, and an expec
 whose count is not met is reported when the test ends. A call that goes over the limit
 of an expectation is reported at the line of that expectation.
 
+**When several expectations match the same call, the one that was set last wins**; the
+earlier ones stay as the fallback. That is the rule of GoogleMock, so the expectations
+are read from the bottom to the top:
+
+```cpp
+EXPECT_CALL(http, Get(cztest::Any(), cztest::Any())).WillRepeatedly(cztest::Return(false));
+EXPECT_CALL(http, Get("https://x/y", cztest::Any())).WillOnce(cztest::Return(true));
+// The second one answers the call to "https://x/y", the first one answers
+// every other call.
+```
+
+A mock belongs to one test: create it inside the test body. Then every run of the test
+starts with fresh expectations, which is what `--repeat` needs.
+
 #### Matchers
 
 `Eq` `Ne` `Lt` `Le` `Gt` `Ge` `Any` `Not` `StrEq` `HasSubstr` `StartsWith` `EndsWith`
@@ -359,6 +373,9 @@ CZTEST_MOCK_COMPLETE(MockHttp);     // the mock implements every method
 A method whose signature does not match the interface is reported by `override`, at the
 line of the macro.
 
+`CZTEST_MOCK_INTERFACE` needs the **complete** type of the interface: it checks the
+virtual destructor, and an interface that is only forward declared cannot be checked.
+
 #### Thread safety
 
 **A mock is not thread safe**: the call counter and the expectation registry are plain
@@ -367,7 +384,8 @@ members without a lock. Use one mock per thread, or guard the calls yourself.
 ## The runner
 
 ```
---filter=<pattern>   run only the matching tests ('*' and '?' wildcards)
+--filter=<patterns>  run only the tests that match ('*' and '?' wildcards,
+                     patterns separated by ':', a leading '-' excludes)
 --list               list the registered tests and exit
 --repeat=<n>         run every test n times
 --quiet / -q         only print failures and the summary
@@ -382,6 +400,14 @@ The names are `Suite.Name`:
 ```bash
 ./tests --filter=Mock.*
 ./tests --filter="Basic/TrimTest.RemovesTheSpaces/1"
+```
+
+The filter takes the syntax of GoogleTest: the patterns are separated by a colon, and a
+pattern that starts with a dash leaves the tests it matches out:
+
+```bash
+./tests --filter="Mock.*:-Mock.Slow"   # every mock but the slow one
+./tests --filter="-Mock.Slow"           # everything but the slow one
 ```
 
 A filter that matches nothing runs no test at all, and that is easy to miss in the
@@ -418,11 +444,12 @@ Expected: Get(1) == 2
 
 The exit code is 0 when everything passed or was skipped, and 1 otherwise.
 
-The JUnit report holds the messages of the failures and marks the skipped tests, so
-the dashboards of the CI show what went wrong:
+The JUnit report holds the messages of the failures, marks the skipped tests and
+carries the duration of every test, so the dashboards of the CI show what went wrong
+and can draw a timeline of the run:
 
 ```xml
-<testcase classname="Mock" name="SequenceOfActions">
+<testcase classname="Mock" name="SequenceOfActions" time="0.000021">
   <failure message="Expected: Get(1) == 2">C:\path\tests\test_mock.cpp:31: Expected: Get(1) == 2
   Actual: 1 vs 2</failure>
 </testcase>
@@ -564,6 +591,11 @@ constrained with concepts, the mock method is checked against the interface by
 `override`, two guards cover the virtual destructor and a missing mock method, and the
 name of a test is checked by a `consteval` function.
 
+**The type erasure keeps the types.** The arguments of a mocked function travel to the
+expectation as a span of pointers to const, and the expectation casts them back to the
+exact parameter types. A parameter that is taken by a const reference therefore stays
+const, and only the parameters that the mock owns can be changed or moved out of.
+
 **An error message has to say what to do.** The GoogleTest spellings that cztest does
 not support fail with the alternative, not with "not declared in this scope".
 
@@ -578,6 +610,9 @@ death tests: all of it is in the documentation rather than left to a guess.
   `const` and references included.
 - A mocked method without parameters needs `CZTEST_MOCK_NOARG_METHOD`.
 - At most eight parameters per mocked method.
+- `CZTEST_MOCK_INTERFACE` needs the complete type of the interface.
+- A mock belongs to one test: a mock that outlives the test body keeps its state and
+  is not verified again.
 - A mock is not thread safe.
 - No death tests, no typed tests, no `EXPECT_THAT` with the matchers of GoogleMock.
 
