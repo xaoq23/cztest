@@ -1,13 +1,27 @@
 # cztest
 
+**一个 C++20 原生、单头文件的单元/集成测试框架。导入如同 doctest，Mock 比 gmock 轻，
+编译错误比两者都清楚。**
+
 现代 C++ 的**纯头文件**单元测试框架，支持**函数级 mock**。只要把 `include` 目录加进搜索路径
 （`-Iinclude`）即可使用，没有任何第三方依赖，也不需要链接额外的库。
 
 * 头文件 only：`#include <cztest/cztest.hpp>` 即可
 * 函数级 mock：逐个函数声明期望、匹配参数、校验调用次数
-* **C++20 起可用**（`std::source_location` 等现代特性；不承诺 C++17 及以下）
+* **C++20 起可用**：`std::source_location`、concepts、`std::span`、`std::string_view` 是一等公民
 * 自带测试运行器：过滤、列表、JUnit XML 报告、彩色输出
 * 与 [cizon2](https://github.com/cizon-dev/cizon) 构建工具无缝配合（`-Iinclude` 由 cizon2 自动添加）
+
+### 编译器基线
+
+| 编译器 | 最低版本 | 验证情况 |
+| --- | --- | --- |
+| GCC | 11 | 16.2 实测通过 |
+| Clang | 14 | 22 实测通过 |
+| MSVC | 19.30 | 未实测 |
+
+**刻意不使用 `std::format`**：它的库支持在各编译器上并不同步，而失败信息的格式化用
+`std::ostringstream` 就够了 —— 不值得为了它把编译器矩阵收窄。
 
 ## 定位
 
@@ -16,9 +30,17 @@
 | | 说明 |
 | --- | --- |
 | **为 cizon2 而生** | 退出码契约（0 = 通过）与 `kind = "test"` target 配套；`--filter` / `--junit` 经 `cizon2 test --` 直接透传；作为依赖时零编译单元、零链接、不需要 `system_links` |
-| **现代 C++，不背老包袱** | 最低 C++20；断言核心是普通函数而不是宏魔法；判定谓词是 `constexpr` 的；失败位置用 `std::source_location`，带函数名 |
-| **不追求 gtest 兼容** | 宏名（`TEST` / `EXPECT_*`）沿用以降低迁移成本，但实现不继承 gtest 的历史包袱：不支持 mock 自由函数（那是符号替换，Windows 上不可移植且需要编译单元），只支持虚方法 |
-| **取舍写在这里** | 换来的：4 个头文件、零依赖、`-I` 即用。放弃的：自由函数 mock、nice/strict mock 变体、全局 mock 环境 |
+| **现代 C++，不背老包袱** | 最低 C++20；`std::source_location` 让失败位置自带文件、行号与函数名；concepts 约束匹配器与动作；断言核心是普通函数而不是宏魔法 |
+| **不追求 gtest 兼容** | 宏名（`TEST` / `EXPECT_*`）沿用以降低迁移成本，但实现不继承 gtest 的历史包袱：**不支持 mock 自由函数**（那需要链接期符号替换，与"纯头文件"互斥），只支持虚方法 |
+| **取舍写在这里** | 换来的：4 个头文件、零依赖、`-I` 即用、没有虚函数开销。放弃的：自由函数 mock、nice/strict mock 变体、全局 mock 环境 |
+
+### 为什么不支持 mock 自由函数
+
+自由函数 mock 必须靠链接期符号替换（`--wrap`、弱符号、`LD_PRELOAD`、IAT patch），
+那意味着：必须有一个编译单元、必须依赖平台、在 Windows 上不可移植。
+这是 gmock 需要一个库的根本原因，也是 cztest 放弃它的原因 —— **单头文件与自由函数 mock 二选一**。
+
+需要 mock 一个自由函数时，把它变成接口的成员（依赖注入）✓。
 
 ## 命名约定
 
