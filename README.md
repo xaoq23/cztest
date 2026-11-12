@@ -384,6 +384,14 @@ The names are `Suite.Name`:
 ./tests --filter="Basic/TrimTest.RemovesTheSpaces/1"
 ```
 
+With `--repeat` every line says which run it belongs to, so a test that only fails
+sometimes is easy to spot:
+
+```
+[       OK ] Flaky.FailsOnTheSecondRun (run 1 of 3)
+[  FAILED  ] Flaky.FailsOnTheSecondRun (run 2 of 3)
+```
+
 One line per test, the details of a failure right below it:
 
 ```

@@ -1074,6 +1074,11 @@ class TestRunner {
                     "[==========] Running " + std::to_string(selected.size()) + " test(s).");
     }
 
+    // With --repeat the summary counts the runs, not the tests, and every
+    // line says which run it belongs to.
+    const bool repeated = options_.repeat > 1;
+    const std::string unit = repeated ? "test run(s)" : "test(s)";
+
     for (const auto* test : selected) {
       for (int repeat = 0; repeat < options_.repeat; ++repeat) {
         if (options_.verbose) {
@@ -1081,10 +1086,14 @@ class TestRunner {
         }
         const auto result = RunSingle(*test);
         total_run += result.counted ? 1 : 0;
+        const std::string run_note =
+            repeated ? " (run " + std::to_string(repeat + 1) + " of " +
+                           std::to_string(options_.repeat) + ")"
+                     : std::string();
         if (result.skipped) {
           skipped_tests.push_back(SkippedTest{test->full_name(), result.skip_reason});
           if (!quiet) {
-            std::string line = "[  SKIPPED ] " + test->full_name();
+            std::string line = "[  SKIPPED ] " + test->full_name() + run_note;
             if (!result.skip_reason.empty()) {
               line += " (";
               line += result.skip_reason;
@@ -1096,13 +1105,13 @@ class TestRunner {
           failed.push_back(FailedTest{test->full_name(), result.failures});
           // The name of a failing test is always printed: it identifies the
           // failure, even in quiet mode.
-          console.Print("\033[0;31m", "[  FAILED  ] " + test->full_name());
+          console.Print("\033[0;31m", "[  FAILED  ] " + test->full_name() + run_note);
           for (const auto& failure : result.failures) {
             const auto where = DescribeLocation(failure.location);
             console.Print(nullptr, (where.empty() ? std::string() : where + ": ") + "Failure\n" + failure.message);
           }
         } else if (!quiet) {
-          console.Print("\033[0;32m", "[       OK ] " + test->full_name());
+          console.Print("\033[0;32m", "[       OK ] " + test->full_name() + run_note);
         }
       }
     }
@@ -1111,18 +1120,18 @@ class TestRunner {
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start)
             .count();
 
-    console.Print(nullptr, "[==========] " + std::to_string(total_run) + " test(s) ran. (" +
+    console.Print(nullptr, "[==========] " + std::to_string(total_run) + " " + unit + " ran. (" +
                               std::to_string(total_ms) + " ms total)");
     const int passed = total_run - static_cast<int>(failed.size()) -
                        static_cast<int>(skipped_tests.size());
     if (passed > 0) {
-      console.Print("\033[0;32m", "[  PASSED  ] " + std::to_string(passed) + " test(s).");
+      console.Print("\033[0;32m", "[  PASSED  ] " + std::to_string(passed) + " " + unit + ".");
     }
     if (!skipped_tests.empty()) {
-      console.Print("\033[0;33m", "[  SKIPPED ] " + std::to_string(skipped_tests.size()) + " test(s).");
+      console.Print("\033[0;33m", "[  SKIPPED ] " + std::to_string(skipped_tests.size()) + " " + unit + ".");
     }
     if (!failed.empty()) {
-      console.Print("\033[0;31m", "[  FAILED  ] " + std::to_string(failed.size()) + " test(s) failed.");
+      console.Print("\033[0;31m", "[  FAILED  ] " + std::to_string(failed.size()) + " " + unit + " failed.");
     }
 
     if (!options_.junit_path.empty()) {

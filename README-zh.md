@@ -374,6 +374,13 @@ CZTEST_MOCK_COMPLETE(MockHttp);     // mock 必须实现了接口的所有方法
 ./tests --filter="Basic/TrimTest.RemovesTheSpaces/1"
 ```
 
+用 `--repeat` 时 ✓ 每一行都会标明这是第几次运行 ✓ —— 偶发失败的用例因此一眼就能看出来 ✓：
+
+```
+[       OK ] Flaky.FailsOnTheSecondRun (run 1 of 3)
+[  FAILED  ] Flaky.FailsOnTheSecondRun (run 2 of 3)
+```
+
 每个用例只占一行 ✓，失败详情紧跟在其后 ✓：
 
 ```
