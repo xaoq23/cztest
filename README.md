@@ -152,6 +152,8 @@ void ReportFailure(std::source_location location, std::string message, bool fata
 | `EXPECT_NEAR(a,b,eps)` | 浮点近似比较 |
 | `EXPECT_DOUBLE_EQ(a,b)` / `EXPECT_FLOAT_EQ(a,b)` | 浮点比较，容差 4 个 ULP（与 GoogleTest 同规则） |
 | `EXPECT_THROW(stmt, Type)` / `NO_THROW` / `ANY_THROW` | 异常断言 |
+| `EXPECT_THAT(value, matcher)` | 用匹配器判断（`ALL_OF` / `ANY_OF` / `ELEMENTS_ARE` 都可用） |
+| `EXPECT_OK(expr)` | `std::expected` 持有值（C++23 起） |
 | `ADD_FAILURE()` / `FAIL()` | 手动失败 / 致命失败 |
 | `SCOPED_TRACE("...")` | 给失败补充上下文（作用域内有效） |
 | `SKIP("...")` | 结束当前用例但不判失败 |
@@ -361,18 +363,24 @@ EXPECT_CALL(mock, Put(1, cztest::HasSubstr("err"))).Times(cztest::AnyNumber());
 EXPECT_CALL(mock, Get(cztest::Any()))          .Times(cztest::AnyNumber()).WillRepeatedly(cztest::Return(0));
 ```
 
-可用匹配器：`Eq` `Ne` `Lt` `Le` `Gt` `Ge` `Any` `Not` `Truly` `StrEq` `HasSubstr`
-`StartsWith` `EndsWith` `IsNull` `NotNull`。也可以直接写常量值，等价于 `Eq(...)`。
+可用匹配器：`Eq` `Ne` `Lt` `Le` `Gt` `Ge` `Any` `Not` `StrEq` `HasSubstr`
+`StartsWith` `EndsWith` `IsNull` `NotNull` `Truly`。也可以直接写常量值，等价于 `Eq(...)`。
 
-**自定义匹配器**只需要一个 `Matches` 成员，不必继承任何东西：
+匹配器可以组合，也可以自己写（只需要一个 `Matches` 成员，不必继承任何东西）：
 
 ```cpp
+EXPECT_THAT(value, cztest::AllOf(cztest::Ge(1), cztest::Lt(100)));   // 全部满足
+EXPECT_THAT(value, cztest::AnyOf(cztest::Eq(1), cztest::Eq(2)));    // 任一满足
+EXPECT_THAT(value, cztest::Not(cztest::Eq(3)));                       // 取反
+EXPECT_THAT(items, cztest::ElementsAre(cztest::Eq(1), cztest::Ge(2))); // 逐个元素
+
 struct IsEven {
     bool Matches(int value) const { return value % 2 == 0; }
 };
-
-EXPECT_CALL(mock, Get(IsEven{}));   // 只接受偶数
+EXPECT_THAT(value, IsEven{});
 ```
+
+比较类匹配器在类型提供 `<=>` 时走三路比较，因此只定义了 `operator<=>` 的类型也能用 ✓。
 
 匹配时**最后注册且能匹配的期望优先**（与 GoogleMock 一致）；当多个期望都能匹配时，
 最近声明的那个生效，其余的期望仍然需要满足自己的次数约束。

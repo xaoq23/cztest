@@ -142,18 +142,34 @@ cztest 里该怎么做，而不是一句 "not declared in this scope"。
 
 | gtest 特性 | 报错里给的替代方案 |
 | --- | --- |
-| `EXPECT_THAT(v, AllOf(Ge(1), Le(100)))` | 直接比较（`EXPECT_EQ`）；复杂条件用 `cztest::Truly(lambda)` |
-| `EXPECT_THAT(v, ElementsAre(...))` | 逐个 `EXPECT_EQ`；或 `cztest::Truly` |
+| `EXPECT_THAT(v, AllOf(Ge(1), Le(100)))` | **已经有 `EXPECT_THAT`** ✓，但匹配器是 cztest 自己的（`cztest::AllOf` 等）；gmock 的匹配器类型不支持 |
+| `EXPECT_THAT(v, ElementsAre(...))` | **已经有** `cztest::ElementsAre(...)` ✓ |
 | `ON_CALL(...).WillByDefault(...)` | `EXPECT_CALL(...).WillRepeatedly(...)`；每次调用不同答案就写多个 `EXPECT_CALL` |
 | `EXPECT_DEATH` | 让函数返回可断言的结果，直接测错误路径 |
 | `TYPED_TEST` | `TEST_P` + `cztest::Values` |
-| `MOCK_METHOD(ret, Name, (types), (override))` | `CZTEST_MOCK_METHOD(ret, Name, types)`（第三参数不带外层括号） |
+| `MOCK_METHOD(ret, Name, (types), (override))` | `CZTEST_MOCK_METHOD(ret, Name, types...)`（第三参数不带外层括号） |
 | `NiceMock<T>` / `StrictMock<T>` | 不需要：cztest 默认就是 strict |
 | `MockFunction`（mock 自由函数） | 不支持；改成依赖注入（把函数做成接口成员） |
 | `::testing::RecordProperty` | 不支持 |
 | `testing::internal::CaptureStdout` | 不支持；把输出做成返回值更好测 |
 
-**已经有的**：`SCOPED_TRACE`（同名 ✓）、`SKIP()`（对应 `GTEST_SKIP()` ✓）。
+**已经有的**：`SCOPED_TRACE`（同名 ✓）、`SKIP()`（对应 `GTEST_SKIP()` ✓）、`EXPECT_THAT`（同名 ✓）、
+`EXPECT_OK`（对应 `std::expected` ✓）、`TEST_P`（同名 ✓）。
+
+### 匹配器的对应关系
+
+| gmock | cztest |
+| --- | --- |
+| `Eq(v)` `Ne(v)` `Lt(v)` `Le(v)` `Gt(v)` `Ge(v)` | 同名 ✓ |
+| `_` | `cztest::Any()` |
+| `IsNull()` `NotNull()` | 同名 ✓ |
+| `StrEq(s)` `HasSubstr(s)` `StartsWith(s)` `EndsWith(s)` | 同名 ✓ |
+| `Truly(f)` | 同名 ✓ |
+| `Not(m)` | 同名 ✓ |
+| `AllOf(...)` `AnyOf(...)` | 同名 ✓ |
+| `ElementsAre(...)` | 同名 ✓ |
+| `Pair(a, b)` | `cztest::Truly` 或逐字段断言 |
+| `Key(a, b)` `Field(...)` | 无对应物 |
 
 ---
 
