@@ -34,6 +34,11 @@
 #include <unistd.h>
 #endif
 
+#include <version>
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
+#include <expected>
+#endif
+
 namespace cztest {
 
 // ---------------------------------------------------------------------------
@@ -564,6 +569,34 @@ template <class F>
   return AssertionResult::Failure(std::move(msg));
 }
 
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
+
+/// The error of a std::expected, when it can be printed.
+template <class E>
+std::string DescribeError(const E& error) {
+  if constexpr (detail::IsStreamable<E>::value) {
+    return detail::PrintValue(error);
+  } else {
+    return "an error";
+  }
+}
+
+/// Asserts that a std::expected holds a value.
+template <class T, class E>
+[[nodiscard]] AssertionResult ExpectOk(const std::expected<T, E>& result) {
+  if (result.has_value()) return AssertionResult::Success();
+  std::string msg = "Expected: the result to hold a value\n  Actual: ";
+  msg += DescribeError(result.error());
+  return AssertionResult::Failure(std::move(msg));
+}
+
+#define CZTEST_EXPECT_OK(cztest_expr_) CZTEST_EXPECT_(::cztest::ExpectOk((cztest_expr_)))
+#define CZTEST_ASSERT_OK(cztest_expr_) CZTEST_ASSERT_(::cztest::ExpectOk((cztest_expr_)))
+#define EXPECT_OK(expr) CZTEST_EXPECT_OK((expr))
+#define ASSERT_OK(expr) CZTEST_ASSERT_OK((expr))
+
+#endif  // __cpp_lib_expected
+
 // ---------------------------------------------------------------------------
 // Assertion macros
 // ---------------------------------------------------------------------------
@@ -673,6 +706,24 @@ template <class F>
 
 
 // ---------------------------------------------------------------------------
+// A test name has to work with the --filter syntax: no space, no colon and no
+// wildcard character.  The check runs at compile time.
+// ---------------------------------------------------------------------------
+namespace detail {
+
+consteval std::string_view CheckTestName(std::string_view name) {
+  for (const char character : name) {
+    if (character == ' ' || character == ':' || character == '/' || character == '*' ||
+        character == '?') {
+      throw "a test name must not contain a space, a colon or a wildcard character";
+    }
+  }
+  return name;
+}
+
+}  // namespace detail
+
+// ---------------------------------------------------------------------------
 // Test registration
 // ---------------------------------------------------------------------------
 namespace detail {
@@ -703,9 +754,9 @@ class Registry {
 
 class Registrar {
  public:
-  Registrar(const char* suite, const char* name, std::source_location location,
+  Registrar(std::string_view suite, std::string_view name, std::source_location location,
              std::function<void()> body) {
-    Registry::Get().Add(TestInfo{suite, name, std::move(body), location});
+    Registry::Get().Add(TestInfo{std::string(suite), std::string(name), std::move(body), location});
   }
 };
 
@@ -730,7 +781,8 @@ class Test {
       ::cztest::detail::TestContext&);                                                          \
   static const ::cztest::detail::Registrar CZTEST_CONCAT(                                         \
       cztest_reg_, CZTEST_CONCAT(suite, CZTEST_CONCAT(_, name)))(                                  \
-      #suite, #name, ::std::source_location::current(),                                                        \
+      ::cztest::detail::CheckTestName(#suite), ::cztest::detail::CheckTestName(#name),              \
+      ::std::source_location::current(),                                                        \
       [] {                                                                                      \
         CZTEST_CONCAT(cztest_body_, CZTEST_CONCAT(suite, CZTEST_CONCAT(_, name)))(                  \
             *::cztest::detail::TestContext::Current());                                          \
@@ -747,7 +799,9 @@ class Test {
   };                                                                                           \
   const ::cztest::detail::Registrar CZTEST_CONCAT(cztest_fixture_,                                \
                                                  CZTEST_CONCAT(fixture, CZTEST_CONCAT(_, name)))   \
-      ::registrar_(#fixture, #name, ::std::source_location::current(), [] {                                    \
+      ::registrar_(::cztest::detail::CheckTestName(#fixture),                              \
+                                ::cztest::detail::CheckTestName(#name),                              \
+                                ::std::source_location::current(), [] {                             \
         CZTEST_CONCAT(cztest_fixture_, CZTEST_CONCAT(fixture, CZTEST_CONCAT(_, name))) instance;    \
         static_cast<::cztest::Test&>(instance).SetUp();                                         \
         instance.TestBody();                                                                   \
