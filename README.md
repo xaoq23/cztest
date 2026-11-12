@@ -128,6 +128,7 @@ void ReportFailure(std::source_location location, std::string message, bool fata
 | `EXPECT_EQ(a,b)` `NE` `LT` `LE` `GT` `GE` | 比较（`ASSERT_` 版本在失败时立刻终止当前用例） |
 | `EXPECT_STREQ(a,b)` / `EXPECT_STRNE(a,b)` | C 字符串比较（支持 `nullptr`） |
 | `EXPECT_NEAR(a,b,eps)` | 浮点近似比较 |
+| `EXPECT_DOUBLE_EQ(a,b)` / `EXPECT_FLOAT_EQ(a,b)` | 浮点比较，容差 4 个 ULP（与 GoogleTest 同规则） |
 | `EXPECT_THROW(stmt, Type)` / `NO_THROW` / `ANY_THROW` | 异常断言 |
 | `ADD_FAILURE()` / `FAIL()` | 手动失败 / 致命失败 |
 
@@ -167,6 +168,8 @@ C:\...\tests\test_modern.cpp:9 (int demo::Helper(int)): Failure
 Expected: value == 42
   Actual: 1 vs 42
 ```
+
+断言直接写在用例里时不打印函数名（那时只会是框架生成的内部名字，没有信息量）。
 
 ---
 
@@ -227,6 +230,9 @@ INSTANTIATE_TEST_SUITE_P(Basic, AdderTest, cztest::Values(
 | `cztest::Values(v1, v2, ...)` | 显式列出参数值（类型必须一致） |
 | `cztest::Range(begin, end)` | 半开区间 `[begin, end)` |
 | `cztest::Bool()` | `false` / `true` |
+
+> 函数调用里**不能带尾逗号**（`Values(a, b,)` 在 C++20/23 都是语法错误），写成
+> `Values(a, b)` 即可。
 
 `GetParam()` 拿到当前实例的参数；`SetUp()` 里读取它最常见。
 
