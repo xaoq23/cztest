@@ -17,7 +17,7 @@ TEST(Math, Addition) {
 - **自带运行器** —— 过滤、列表、JUnit XML、彩色输出
 - **为 [cizon2](https://github.com/cizon-dev/cizon) 而生** —— `-Iinclude` 由它自动添加
 
-版本 0.3.0（`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`）。
+版本 0.4.0（`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`）。
 
 > English version: [README.md](README.md)
 
@@ -42,6 +42,22 @@ TEST(Math, Addition) {
 | 断言失败后 | 继续（`EXPECT`）或中止（`ASSERT`） | 同 | 同 |
 | 编译期检查 | 部分 | 部分 | mock、匹配器、动作、用例名 |
 | 报错会告诉你怎么做 | 否 | 否 | **是** |
+
+### 它的代价
+
+同样的用例 ✓ 同样的编译器 ✓ 同样的机器 ✓ —— 方法见
+[benchmarks/README.md](benchmarks/README.md) ✓：
+
+| 1000 个用例 | 编译时间 | 二进制大小 | 运行时间 |
+| --- | --- | --- | --- |
+| cztest | 15.2 s | 936 kB | 19 ms |
+| gtest / gmock | 38.3 s | 4984 kB | 44 ms |
+| doctest | 10.2 s | 1409 kB | 20 ms |
+
+比 GoogleTest 编译快 ✓、二进制小得多 ✓；比 doctest 重 ✓ —— 这是应该的 ✓：
+cztest 有 mock ✓、有自己的运行器 ✓，doctest 都没有 ✓。
+单头文件的代价是 ✓：cztest 的运行器在你的翻译单元里编译 ✓，
+而 GoogleTest 把运行器放在库里 ✓。
 
 ## 为什么还要一个框架
 
@@ -115,6 +131,9 @@ cztest/
 │   ├── param.hpp            #   参数化测试
 │   └── compat.hpp           #   对不支持的 GoogleTest 写法给出教学式报错
 ├── tests/                   # 框架自己的测试
+├── benchmarks/              # 编译时间与体积的测量 ✓
+│   ├── README.md             #   数字与测量方法 ✓
+│   └── run.py                #   跑出这些数字的脚本 ✓
 ├── docs/
 │   ├── tutorial.md           #   从最小用例到集成测试的完整教程
 │   └── migration-gtest.md    #   从 GoogleTest 过来要改什么
@@ -596,6 +615,7 @@ mock 方法由 `override` 对照接口检查 ✓，两个护栏覆盖虚析构�
 | --- | --- |
 | [docs/tutorial.md](docs/tutorial.md) | 完整教程：从最小用例到集成测试 |
 | [docs/migration-gtest.md](docs/migration-gtest.md) | 从 GoogleTest 过来要改什么，附一次真实迁移的记录 |
+| [benchmarks/README.md](benchmarks/README.md) | 三个框架的编译时间与体积，以及这些数字是怎么测的 |
 | [README.md](README.md) | 本文档的英文版 |
 
 ## License

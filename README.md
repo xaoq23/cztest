@@ -17,7 +17,7 @@ TEST(Math, Addition) {
 - **Its own runner** — filtering, listing, JUnit XML, colored output.
 - **Made for [cizon2](https://github.com/cizon-dev/cizon)** — `-Iinclude` is added automatically.
 
-Version 0.3.0 (`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`).
+Version 0.4.0 (`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`).
 
 > Chinese version: [README-zh.md](README-zh.md)
 
@@ -42,6 +42,22 @@ Version 0.3.0 (`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`).
 | Failing assertions | continue (`EXPECT`) or abort (`ASSERT`) | same | same |
 | Compile time checks | some | some | mocks, matchers, actions, test names |
 | A framework that says what to do | no | no | yes |
+
+### What it costs
+
+The same tests, the same compiler, the same machine; the method is in
+[benchmarks/README.md](benchmarks/README.md):
+
+| 1000 tests | compile time | binary size | run time |
+| --- | --- | --- | --- |
+| cztest | 15.2 s | 936 kB | 19 ms |
+| gtest / gmock | 38.3 s | 4984 kB | 44 ms |
+| doctest | 10.2 s | 1409 kB | 20 ms |
+
+cztest compiles faster than GoogleTest and produces a much smaller binary. It
+costs more than doctest, which has neither mocks nor a runner of its own. The
+price of the single header is that the runner of cztest is compiled in your
+translation unit, while GoogleTest keeps its runner in a library.
 
 ## Why another framework
 
@@ -118,6 +134,9 @@ cztest/
 │   ├── param.hpp            #   parameterised tests
 │   └── compat.hpp           #   teaching errors for the GoogleTest features that are missing
 ├── tests/                   # the framework's own tests
+├── benchmarks/              # the measurement of the compile time and the size
+│   ├── README.md             #   the numbers and the method
+│   └── run.py                #   the script that produces them
 ├── docs/
 │   ├── tutorial.md           #   from the smallest test to integration tests
 │   └── migration-gtest.md    #   what changes when you come from GoogleTest
@@ -622,6 +641,7 @@ death tests: all of it is in the documentation rather than left to a guess.
 | --- | --- |
 | [docs/tutorial.md](docs/tutorial.md) | the complete tutorial, from the smallest test to integration tests |
 | [docs/migration-gtest.md](docs/migration-gtest.md) | what changes when you come from GoogleTest, with a record of a real migration |
+| [benchmarks/README.md](benchmarks/README.md) | the compile time and the size of the three frameworks, and how they were measured |
 | [README-zh.md](README-zh.md) | the Chinese version of this document |
 
 ## License
