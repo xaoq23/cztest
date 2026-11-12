@@ -69,6 +69,58 @@ StringViewHolder AsStringView(const T& value) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Comparisons.
+//
+// The three way comparison is used when the type has one, so that a type that
+// only defines <=> works as well; the operators are the fallback.
+// ---------------------------------------------------------------------------
+template <class A, class B>
+constexpr bool Less(const A& a, const B& b) {
+  if constexpr (requires { a <=> b; }) {
+    return (a <=> b) < 0;
+  } else {
+    return a < b;
+  }
+}
+
+template <class A, class B>
+constexpr bool LessEqual(const A& a, const B& b) {
+  if constexpr (requires { a <=> b; }) {
+    return (a <=> b) <= 0;
+  } else {
+    return a <= b;
+  }
+}
+
+template <class A, class B>
+constexpr bool Greater(const A& a, const B& b) {
+  if constexpr (requires { a <=> b; }) {
+    return (a <=> b) > 0;
+  } else {
+    return a > b;
+  }
+}
+
+template <class A, class B>
+constexpr bool GreaterEqual(const A& a, const B& b) {
+  if constexpr (requires { a <=> b; }) {
+    return (a <=> b) >= 0;
+  } else {
+    return a >= b;
+  }
+}
+
+/// The description of a matcher, when it has one.
+template <class M>
+std::string DescribeMatcher(const M& matcher) {
+  if constexpr (requires { matcher.Describe(); }) {
+    return matcher.Describe();
+  } else {
+    return "a matcher";
+  }
+}
+
 }  // namespace detail
 
 // ---------------------------------------------------------------------------
@@ -236,8 +288,8 @@ class Matcher : public detail::MatcherBase {
   // --- matching ----------------------------------------------------------
   template <class U>
   bool Matches(const U& value) const {
-    if (op_ == Op::kAny) return true;
-
+    // A custom predicate comes first: a matcher built with Custom() has no
+    // comparison operator, but it does have a predicate.
     if (has_predicate_) {
       if constexpr (std::is_same_v<std::decay_t<U>, T>) {
         return predicate_(value);
@@ -249,6 +301,8 @@ class Matcher : public detail::MatcherBase {
         return false;
       }
     }
+
+    if (op_ == Op::kAny) return true;
 
     if constexpr (std::is_same_v<std::decay_t<U>, T>) {
       return Compare(value, value_);
@@ -271,10 +325,10 @@ class Matcher : public detail::MatcherBase {
     switch (op_) {
       case Op::kEq: return actual == expected;
       case Op::kNe: return !(actual == expected);
-      case Op::kLt: return actual < expected;
-      case Op::kLe: return actual <= expected;
-      case Op::kGt: return actual > expected;
-      case Op::kGe: return actual >= expected;
+      case Op::kLt: return detail::Less(actual, expected);
+      case Op::kLe: return detail::LessEqual(actual, expected);
+      case Op::kGt: return detail::Greater(actual, expected);
+      case Op::kGe: return detail::GreaterEqual(actual, expected);
       case Op::kAny: break;
     }
     return true;
@@ -407,10 +461,147 @@ class NegatedMatcher : public detail::MatcherBase {
     return !inner_.Matches(value);
   }
 
-  std::string Describe() const override { return "not (" + inner_.Describe() + ")"; }
+  std::string Describe() const override { return "not (" + detail::DescribeMatcher(inner_) + ")"; }
 
  private:
   M inner_;
+};
+
+// ---------------------------------------------------------------------------
+// Composition: AllOf, AnyOf and ElementsAre.
+//
+// The composed matchers are polymorphic: they convert to a Matcher<T> of the
+// type they are used with, so they can be nested freely.
+// ---------------------------------------------------------------------------
+template <class... Ms>
+class AllOfMatcher : public detail::MatcherBase {
+ public:
+  static_assert(sizeof...(Ms) > 0, "AllOf needs at least one matcher.");
+
+  explicit AllOfMatcher(Ms... matchers) : matchers_(std::move(matchers)...) {}
+
+  template <class T>
+  operator Matcher<T>() const {
+    auto check = [matchers = matchers_](const T& value) {
+      return std::apply(
+          [&value](const auto&... matcher) {
+            return (static_cast<Matcher<T>>(matcher).Matches(value) && ...);
+          },
+          matchers);
+    };
+    return Matcher<T>::Custom(std::move(check), Describe());
+  }
+
+  template <class U>
+  bool Matches(const U& value) const {
+    return std::apply(
+        [&value](const auto&... matcher) { return (matcher.Matches(value) && ...); }, matchers_);
+  }
+
+  std::string Describe() const override {
+    std::string text = "matches all of (";
+    bool first = true;
+    std::apply(
+        [&](const auto&... matcher) {
+            ((text += (first ? (first = false, "") : ", "), text += detail::DescribeMatcher(matcher)), ...);
+        },
+        matchers_);
+    return text + ")";
+  }
+
+ private:
+  std::tuple<Ms...> matchers_;
+};
+
+template <class... Ms>
+class AnyOfMatcher : public detail::MatcherBase {
+ public:
+  static_assert(sizeof...(Ms) > 0, "AnyOf needs at least one matcher.");
+
+  explicit AnyOfMatcher(Ms... matchers) : matchers_(std::move(matchers)...) {}
+
+  template <class T>
+  operator Matcher<T>() const {
+    auto check = [matchers = matchers_](const T& value) {
+      return std::apply(
+          [&value](const auto&... matcher) {
+            return (static_cast<Matcher<T>>(matcher).Matches(value) || ...);
+          },
+          matchers);
+    };
+    return Matcher<T>::Custom(std::move(check), Describe());
+  }
+
+  template <class U>
+  bool Matches(const U& value) const {
+    return std::apply(
+        [&value](const auto&... matcher) { return (matcher.Matches(value) || ...); }, matchers_);
+  }
+
+  std::string Describe() const override {
+    std::string text = "matches any of (";
+    bool first = true;
+    std::apply(
+        [&](const auto&... matcher) {
+            ((text += (first ? (first = false, "") : ", "), text += detail::DescribeMatcher(matcher)), ...);
+        },
+        matchers_);
+    return text + ")";
+  }
+
+ private:
+  std::tuple<Ms...> matchers_;
+};
+
+template <class... Ms>
+class ElementsAreMatcher : public detail::MatcherBase {
+ public:
+  static_assert(sizeof...(Ms) > 0, "ElementsAre needs at least one matcher.");
+
+  explicit ElementsAreMatcher(Ms... matchers) : matchers_(std::move(matchers)...) {}
+
+  template <class T>
+  operator Matcher<T>() const {
+    auto check = [matchers = matchers_](const T& container) {
+      using Element = std::decay_t<decltype(*std::begin(container))>;
+      auto it = std::begin(container);
+      const auto end = std::end(container);
+      bool ok = true;
+      std::apply(
+          [&](const auto&... matcher) {
+            (
+                [&] {
+                  if (!ok || it == end) {
+                    ok = false;
+                    return;
+                  }
+                  if (!static_cast<Matcher<Element>>(matcher).Matches(*it)) {
+                    ok = false;
+                    return;
+                  }
+                  ++it;
+                }(),
+                ...);
+          },
+          matchers);
+      return ok && it == end;
+    };
+    return Matcher<T>::Custom(std::move(check), Describe());
+  }
+
+  std::string Describe() const override {
+    std::string text = "has the elements (";
+    bool first = true;
+    std::apply(
+        [&](const auto&... matcher) {
+            ((text += (first ? (first = false, "") : ", "), text += detail::DescribeMatcher(matcher)), ...);
+        },
+        matchers_);
+    return text + ")";
+  }
+
+ private:
+  std::tuple<Ms...> matchers_;
 };
 
 // ---------------------------------------------------------------------------
@@ -478,6 +669,62 @@ auto Not(M&& matcher) {
   using D = std::decay_t<M>;
   return NegatedMatcher<D>(D(std::forward<M>(matcher)));
 }
+
+/// Matches when every one of the matchers matches.
+template <class... Ms>
+auto AllOf(Ms... matchers) {
+  return AllOfMatcher<Ms...>(std::move(matchers)...);
+}
+
+/// Matches when at least one of the matchers matches.
+template <class... Ms>
+auto AnyOf(Ms... matchers) {
+  return AnyOfMatcher<Ms...>(std::move(matchers)...);
+}
+
+/// Matches a container whose elements match the given matchers, one by one.
+template <class... Ms>
+auto ElementsAre(Ms... matchers) {
+  return ElementsAreMatcher<Ms...>(std::move(matchers)...);
+}
+
+/// Matches a value against a matcher; the matcher is converted to the type of
+/// the value first, so the composed matchers work as well.
+template <class M, class V>
+bool Matches(const M& matcher, const V& value) {
+  using Value = std::decay_t<V>;
+  return static_cast<Matcher<Value>>(matcher).Matches(value);
+}
+
+// ---------------------------------------------------------------------------
+// EXPECT_THAT: the spelling GoogleMock uses.
+// ---------------------------------------------------------------------------
+template <class V, class M>
+[[nodiscard]] AssertionResult ExpectThat(const V& value, const M& matcher) {
+  using Value = std::decay_t<V>;
+  static_assert(std::is_constructible_v<Matcher<Value>, const M&>,
+                "This matcher cannot be used with this value type. cztest's matchers are Eq, "
+                "Ne, Lt, Le, Gt, Ge, Any, Not, StrEq, HasSubstr, StartsWith, EndsWith, IsNull, "
+                "NotNull, Truly, AllOf, AnyOf and ElementsAre; the matchers of GoogleMock are "
+                "not supported.");
+  const Matcher<Value> converted(matcher);
+  if (converted.Matches(value)) return AssertionResult::Success();
+
+  std::string msg = "Expected: the value to match ";
+  msg += converted.Describe();
+  msg += "\n  Actual: ";
+  msg += detail::PrintValue(value);
+  return AssertionResult::Failure(std::move(msg));
+}
+
+#define CZTEST_EXPECT_THAT(cztest_value_, cztest_matcher_) \
+  CZTEST_EXPECT_(::cztest::ExpectThat((cztest_value_), (cztest_matcher_)))
+
+#define CZTEST_ASSERT_THAT(cztest_value_, cztest_matcher_) \
+  CZTEST_ASSERT_(::cztest::ExpectThat((cztest_value_), (cztest_matcher_)))
+
+#define EXPECT_THAT(value, matcher) CZTEST_EXPECT_THAT((value), (matcher))
+#define ASSERT_THAT(value, matcher) CZTEST_ASSERT_THAT((value), (matcher))
 
 namespace detail {
 

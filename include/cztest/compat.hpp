@@ -32,11 +32,9 @@ struct AlwaysFalse : std::false_type {};
                  ".WillRepeatedly(action) for the default behaviour, and add one "     \
                  "EXPECT_CALL per distinct call if the answers differ.")
 
-// EXPECT_THAT and the matcher algebra are not part of cztest.
-#define EXPECT_THAT(...)                                                             \
-  static_assert(::cztest::compat::AlwaysFalse<>::value,                                \
-                 "cztest has no EXPECT_THAT. Compare the value directly "               \
-                 "(EXPECT_EQ) or use cztest::Truly(lambda) for a custom condition.")
+// EXPECT_THAT exists in cztest, but the matchers of GoogleMock do not: the
+// static assertion inside cztest::ExpectThat names the matchers that are
+// available.
 
 // GoogleMock's MOCK_METHOD has a different syntax than CZTEST_MOCK_METHOD.
 #define MOCK_METHOD(...)                                                             \
