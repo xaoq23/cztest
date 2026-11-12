@@ -746,7 +746,9 @@ Matcher<T> AsMatcher(M&& value) {
         "matches a user defined matcher");
   } else {
     static_assert(std::is_constructible_v<T, D>,
-                  "The expected value is not compatible with the mocked parameter type.");
+                  "This value cannot be used as an expectation for a parameter of this "
+                  "type. Pass a value of the parameter type, or a matcher that accepts "
+                  "it (cztest::Any() accepts every value).");
     return Matcher<T>::Equal(T(std::forward<M>(value)));
   }
 }

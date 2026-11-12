@@ -33,6 +33,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <utility>
 #include <optional>
 #include <span>
 #include <string>
@@ -69,6 +70,57 @@ class MockFailure : public std::exception {
 };
 
 namespace detail {
+
+// ---------------------------------------------------------------------------
+// MoveOnlyFunction: the type an action is stored in.
+//
+// std::function requires a copyable action, so an action that captures a move
+// only object (a unique_ptr, for example) could not be stored.  The standard
+// type for that is std::move_only_function, but it is C++23 and not every
+// library ships it (libstdc++ defines the feature macro without providing the
+// class), so the small type is written here instead: it works on C++20 and
+// does not depend on the library.
+// ---------------------------------------------------------------------------
+template <class Signature>
+class MoveOnlyFunction;
+
+template <class R, class... Args>
+class MoveOnlyFunction<R(Args...)> {
+ public:
+  MoveOnlyFunction() = delete;
+  MoveOnlyFunction(const MoveOnlyFunction&) = delete;
+  MoveOnlyFunction& operator=(const MoveOnlyFunction&) = delete;
+  MoveOnlyFunction(MoveOnlyFunction&&) = default;
+  MoveOnlyFunction& operator=(MoveOnlyFunction&&) = default;
+
+  template <class F>
+    requires std::is_invocable_r_v<R, F&, Args...>
+  explicit MoveOnlyFunction(F&& callable)
+      : impl_(std::make_unique<Model<std::decay_t<F>>>(std::forward<F>(callable))) {}
+
+  R operator()(Args... args) const { return impl_->call(std::forward<Args>(args)...); }
+
+  explicit operator bool() const { return impl_ != nullptr; }
+
+ private:
+  struct Concept {
+    virtual ~Concept() = default;
+    virtual R call(Args... args) const = 0;
+  };
+
+  template <class F>
+  struct Model final : Concept {
+    explicit Model(F callable) : callable_(std::move(callable)) {}
+
+    R call(Args... args) const override {
+      return std::invoke(callable_, std::forward<Args>(args)...);
+    }
+
+    mutable F callable_;
+  };
+
+  std::unique_ptr<Concept> impl_;
+};
 
 // ---------------------------------------------------------------------------
 // Concepts that describe what an action has to look like.
@@ -170,7 +222,7 @@ using ActionArg = std::conditional_t<
 template <class Ret, class... Args>
 class Expectation final : public ExpectationEntry {
  public:
-  using Action = std::function<Ret(Args...)>;
+  using Action = detail::MoveOnlyFunction<Ret(Args...)>;
   using MatcherTuple = std::tuple<Matcher<std::decay_t<Args>>...>;
 
   Expectation(std::string name, MatcherTuple matchers, std::source_location site)
@@ -186,8 +238,8 @@ class Expectation final : public ExpectationEntry {
       Action action = std::move(once_actions_.front());
       once_actions_.erase(once_actions_.begin());
       InvokeAction(action, args, ret_out, std::index_sequence_for<Args...>{});
-    } else if (default_action_) {
-      InvokeAction(default_action_, args, ret_out, std::index_sequence_for<Args...>{});
+    } else if (default_action_.has_value()) {
+      InvokeAction(*default_action_, args, ret_out, std::index_sequence_for<Args...>{});
     }
   }
 
@@ -277,7 +329,7 @@ class Expectation final : public ExpectationEntry {
   MatcherTuple matchers_;
   std::source_location site_;
   std::vector<Action> once_actions_;
-  Action default_action_;
+  std::optional<Action> default_action_;
   bool has_explicit_action_{false};
   bool explicit_cardinality_{false};
   int min_{0};
@@ -291,7 +343,7 @@ class Expectation final : public ExpectationEntry {
 template <class Ret, class... Args>
 class ExpectationSpec {
  public:
-  using Action = std::function<Ret(Args...)>;
+  using Action = detail::MoveOnlyFunction<Ret(Args...)>;
 
   explicit ExpectationSpec(std::shared_ptr<Expectation<Ret, Args...>> entry) : entry_(std::move(entry)) {}
 
@@ -315,6 +367,9 @@ class ExpectationSpec {
   template <class A>
     requires detail::ActionFor<A, Ret, Args...>
   ExpectationSpec& WillOnce(A&& action) {
+    static_assert(detail::ActionFor<A, Ret, Args...>,
+                  "The action does not fit the mocked function: it has to take the "
+                  "parameters of the function and return its return type.");
     entry_->AddOnceAction(Action(std::forward<A>(action)));
     return *this;
   }
@@ -323,6 +378,9 @@ class ExpectationSpec {
   template <class A>
     requires detail::ActionFor<A, Ret, Args...>
   ExpectationSpec& WillRepeatedly(A&& action) {
+    static_assert(detail::ActionFor<A, Ret, Args...>,
+                  "The action does not fit the mocked function: it has to take the "
+                  "parameters of the function and return its return type.");
     entry_->SetDefaultAction(Action(std::forward<A>(action)));
     return *this;
   }
@@ -343,6 +401,10 @@ class ExpectationSpec {
 
 // ---------------------------------------------------------------------------
 // MockBase: mix-in that gives a class the mocking behaviour.
+//
+// A mock is not thread safe: the call counter and the expectation registry
+// are plain members without a lock.  Use one mock per thread, or guard the
+// calls yourself.
 // ---------------------------------------------------------------------------
 class MockBase : public detail::MockVerifier {
  public:
@@ -560,6 +622,29 @@ auto Invoke(F callable) {
 
 #define CZTEST_MOCK_DISPATCH_NOARG_(Q, ret, name) CZTEST_MOCK_0(Q, ret, name)
 
+/// The mocked interface needs a virtual destructor: deleting through a
+/// pointer to the interface is undefined behaviour otherwise.
+///
+///   class MockStorage : public IStorage, public cztest::MockBase {
+///    public:
+///     CZTEST_MOCK_INTERFACE(IStorage);
+///     CZTEST_MOCK_METHOD(int, Get, int);
+///   };
+#define CZTEST_MOCK_INTERFACE(Iface)                                             \
+  static_assert(std::has_virtual_destructor_v<Iface>,                            \
+                 "The mocked interface has no virtual destructor. Add "          \
+                 "'virtual ~Iface() = default;' to the interface: deleting "       \
+                 "through a pointer to the interface is undefined behaviour.")
+
+/// The mock has to implement every method of the interface.  Place the check
+/// after the class:
+///
+///   class MockStorage : public IStorage, public cztest::MockBase { ... };
+///   CZTEST_MOCK_COMPLETE(MockStorage);
+#define CZTEST_MOCK_COMPLETE(Mock)                                                    \
+  static_assert(!std::is_abstract_v<Mock>,                                            \
+                 "The mock is still abstract: one of the methods of the interface "   \
+                 "has no CZTEST_MOCK_METHOD.")
 #define CZTEST_MOCK_0(Q, ret, name)                                                  \
   ret name() Q override {                                                           \
     static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \

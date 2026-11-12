@@ -202,6 +202,17 @@ TEST(Mock, AUserDefinedMatcherWorksWithoutInheriting) {
     EXPECT_EQ(mock.Get(4), 1);
 }
 
+TEST(Mock, AnActionMayCaptureAMoveOnlyObject) {
+    MockStorage mock;
+    auto owned = std::make_unique<int>(42);
+
+    EXPECT_CALL(mock, Get(1)).Times(1).WillOnce(cztest::Invoke([owned = std::move(owned)](int) {
+        return *owned;
+    }));
+
+    EXPECT_EQ(mock.Get(1), 42);
+}
+
 TEST(Mock, Matchers) {  EXPECT_TRUE(cztest::Eq(3).Matches(3));
   EXPECT_FALSE(cztest::Eq(3).Matches(4));
   EXPECT_TRUE(cztest::Ne(3).Matches(4));
