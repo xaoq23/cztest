@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -15,6 +17,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -265,6 +268,38 @@ inline bool StringEquals(const char* a, const char* b) {
   return (a == nullptr || b == nullptr) ? (a == b) : (std::strcmp(a, b) == 0);
 }
 
+/// Maps a floating point value to an integer whose order follows the order of
+/// the values, so that the distance between two of them counts the
+/// representable steps between them.
+template <class T>
+std::int64_t OrderedFloatKey(T value) {
+  if constexpr (sizeof(T) == sizeof(std::int32_t)) {
+    std::int32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return (bits < 0) ? (static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::min()) - bits)
+                       : static_cast<std::int64_t>(bits);
+  } else {
+    std::int64_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return (bits < 0) ? (std::numeric_limits<std::int64_t>::min() - bits) : bits;
+  }
+}
+
+/// Compares two floating point numbers with the tolerance of four units in
+/// the last place, the rule GoogleTest uses for EXPECT_DOUBLE_EQ.
+template <class T>
+bool AlmostEquals(T lhs, T rhs) {
+  if (std::isnan(lhs) || std::isnan(rhs)) return false;
+  if (lhs == rhs) return true;
+  if (std::isinf(lhs) || std::isinf(rhs)) return false;
+  const std::int64_t left = OrderedFloatKey(lhs);
+  const std::int64_t right = OrderedFloatKey(rhs);
+  const std::uint64_t distance =
+      left >= right ? static_cast<std::uint64_t>(left) - static_cast<std::uint64_t>(right)
+                     : static_cast<std::uint64_t>(right) - static_cast<std::uint64_t>(left);
+  return distance <= 4;
+}
+
 }  // namespace detail
 
 // ---------------------------------------------------------------------------
@@ -392,10 +427,27 @@ CZTEST_DEFINE_EXPECT(>=, ExpectGreaterEqual, "a >= b")
   return AssertionResult::Failure(std::move(msg));
 }
 
+/// Compares two floating point numbers with the tolerance of four units in
+/// the last place.
+template <class T>
+[[nodiscard]] AssertionResult ExpectAlmostEqual(T a, T b, std::string_view expr_a = "a",
+                                                 std::string_view expr_b = "b") {
+  if (detail::AlmostEquals(a, b)) return AssertionResult::Success();
+  std::string msg = "Expected: ";
+  msg += expr_a;
+  msg += " == ";
+  msg += expr_b;
+  msg += "\n  Actual: ";
+  msg += detail::PrintValue(a);
+  msg += " vs ";
+  msg += detail::PrintValue(b);
+  msg += " (they differ by more than 4 units in the last place)";
+  return AssertionResult::Failure(std::move(msg));
+}
+
 template <class E, class F>
 [[nodiscard]] AssertionResult ExpectThrow(F&& fn, std::string_view expr = "statement",
-                                          std::string_view type_name = "the exception type") {
-  try {
+                                          std::string_view type_name = "the exception type") {  try {
     fn();
   } catch (const E&) {
     return AssertionResult::Success();
@@ -499,6 +551,11 @@ template <class F>
 
 #define EXPECT_NEAR(a, b, tolerance) CZTEST_EXPECT_(::cztest::ExpectNear((a), (b), (tolerance), #a, #b))
 #define ASSERT_NEAR(a, b, tolerance) CZTEST_ASSERT_(::cztest::ExpectNear((a), (b), (tolerance), #a, #b))
+
+#define EXPECT_DOUBLE_EQ(a, b) CZTEST_EXPECT_(::cztest::ExpectAlmostEqual((a), (b), #a, #b))
+#define EXPECT_FLOAT_EQ(a, b) CZTEST_EXPECT_(::cztest::ExpectAlmostEqual((a), (b), #a, #b))
+#define ASSERT_DOUBLE_EQ(a, b) CZTEST_ASSERT_(::cztest::ExpectAlmostEqual((a), (b), #a, #b))
+#define ASSERT_FLOAT_EQ(a, b) CZTEST_ASSERT_(::cztest::ExpectAlmostEqual((a), (b), #a, #b))
 
 #define EXPECT_THROW(statement, exception_type) \
   CZTEST_EXPECT_(::cztest::ExpectThrow<exception_type>([&]() { statement; }, #statement, #exception_type))
@@ -691,14 +748,23 @@ class Console {
 };
 
 /// Renders a source location as "file:line (function)".
+///
+/// The function name is omitted when the assertion sits directly in a test
+/// body: there the name would be the one of the generated body function,
+/// which tells the reader nothing.
 inline std::string DescribeLocation(std::source_location location) {
   std::string text = location.file_name();
   text += ":";
   text += std::to_string(location.line());
-  if (location.function_name() != nullptr && *location.function_name() != '\0') {
-    text += " (";
-    text += location.function_name();
-    text += ")";
+  const char* function = location.function_name();
+  if (function != nullptr && *function != '\0') {
+    const std::string_view name(function);
+    const bool generated = name.find("cztest_") == 0 || name.find("cztest_body") == 0;
+    if (!generated) {
+      text += " (";
+      text += name;
+      text += ")";
+    }
   }
   return text;
 }
