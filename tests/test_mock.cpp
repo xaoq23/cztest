@@ -49,6 +49,18 @@ class MockWidget : public IWidget, public cztest::MockBase {
   CZTEST_MOCK_METHOD(void, Take, std::unique_ptr<int>);
 };
 
+// A fourth interface with a mutable reference parameter.
+struct IBuffer {
+  virtual ~IBuffer() = default;
+  virtual void Fill(std::string& buffer, char value) = 0;
+};
+
+class MockBuffer : public IBuffer, public cztest::MockBase {
+ public:
+  CZTEST_MOCK_METHOD(void, Fill, std::string&, char);
+};
+CZTEST_MOCK_COMPLETE(MockBuffer);
+
 // --- tests -----------------------------------------------------------------
 TEST(Mock, ReturnsConfiguredValue) {
   MockStorage mock;
@@ -180,6 +192,37 @@ TEST(Mock, MoveOnlyArguments) {
   MockWidget mock;
   EXPECT_CALL(mock, Take(cztest::Any())).Times(1);
   mock.Take(std::make_unique<int>(1));
+}
+
+TEST(Mock, AnActionCanTakeAMoveOnlyArgument) {
+  MockWidget mock;
+  // The action receives the argument the way the mocked function takes it:
+  // by value, and moved when the type cannot be copied.
+  EXPECT_CALL(mock, Take(cztest::Any())).Times(1).WillOnce(cztest::Invoke([](std::unique_ptr<int> value) {
+    EXPECT_EQ(*value, 42);
+  }));
+
+  mock.Take(std::make_unique<int>(42));
+}
+
+TEST(Mock, AMutableReferenceParameterCanBeChanged) {
+  MockBuffer mock;
+  // A parameter that is taken by a mutable reference belongs to the caller,
+  // and the action may change it.
+  EXPECT_CALL(mock, Fill(cztest::Any(), cztest::Eq('x'))).Times(1).WillOnce(
+      cztest::Invoke([](std::string& buffer, char) { buffer = "filled"; }));
+
+  std::string buffer = "empty";
+  mock.Fill(buffer, 'x');
+  EXPECT_EQ(buffer, "filled");
+}
+
+TEST(Mock, AConstReferenceParameterStaysConst) {
+  MockStorage mock;
+  // A parameter that is taken by a const reference may only be read.
+  EXPECT_CALL(mock, Put(1, cztest::Eq("value"))).Times(1).WillOnce(cztest::Invoke([](int, const std::string&) {}));
+
+  mock.Put(1, "value");
 }
 
 // --- a matcher of the user: it only needs a Matches member ----------------

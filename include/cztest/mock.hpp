@@ -129,19 +129,55 @@ class MoveOnlyFunction<R(Args...)> {
 // produces a readable error instead of a template backtrace.
 // ---------------------------------------------------------------------------
 
+/// How an argument is passed to the action of an expectation.
+///
+/// A parameter that is taken by reference stays a reference.  A parameter
+/// that is taken by value becomes an lvalue when the type can be copied,
+/// and an rvalue when it cannot: the mock owns such a parameter, so the
+/// action may move out of it.
+template <class A>
+using ActionArg = std::conditional_t<
+    std::is_lvalue_reference_v<A>, A,
+    std::conditional_t<std::is_copy_constructible_v<std::remove_reference_t<A>>,
+                        std::remove_reference_t<A>&, std::remove_reference_t<A>&&>>;
+
 /// An action can stand in for a mocked function: it is called with the
 /// arguments of the function and its result is converted to the return type.
+///
+/// The check mirrors the call that the framework really performs: the
+/// arguments reach the action as ActionArg, so an action that takes a move
+/// only parameter by value is accepted.
 template <class A, class Ret, class... Args>
 concept ActionFor =
-    requires(A action, Args... args) {
-  { action(args...) };
+    requires(A action, ActionArg<Args>... args) {
+  { action(std::forward<ActionArg<Args>>(args)...) };
 } &&
     (std::same_as<Ret, void> ||
-     std::convertible_to<std::invoke_result_t<A&, Args...>, Ret>);
+     std::convertible_to<std::invoke_result_t<A&, ActionArg<Args>...>, Ret>);
 
 /// The arguments of a mocked function arrive at the expectation as a span of
 /// pointers; the expectation casts them back to the exact parameter types.
-using ArgSpan = std::span<void* const>;
+///
+/// The span holds pointers to const: the expectation may read every
+/// argument, but it may only change the ones that the mock owns.
+using ArgSpan = std::span<const void* const>;
+
+/// The value of one argument at the call site.
+///
+/// A parameter that is taken by a const reference belongs to the caller and
+/// may only be read.  A parameter that is taken by a mutable reference may
+/// be changed, and a parameter that is taken by value is a copy that the
+/// mock owns: the action may move out of it.
+template <class A>
+std::remove_reference_t<A>& ArgValue(const void* pointer) {
+  using Value = std::remove_reference_t<A>;
+  if constexpr (std::is_lvalue_reference_v<A> && std::is_const_v<Value>) {
+    return *static_cast<const Value*>(pointer);
+  } else {
+    // The span hides the mutability that the type of the parameter allows.
+    return *const_cast<Value*>(static_cast<const Value*>(pointer));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // The source location of the EXPECT_CALL that created the expectation.
@@ -210,14 +246,6 @@ std::string DescribeCall(const char* name, const Args&... args) {
   message += ")";
   return message;
 }
-
-// How an argument is passed to the action of an expectation.  By value
-// arguments are copied when they are copyable and moved otherwise.
-template <class A>
-using ActionArg = std::conditional_t<
-    std::is_lvalue_reference_v<A>, A,
-    std::conditional_t<std::is_copy_constructible_v<std::remove_reference_t<A>>,
-                        std::remove_reference_t<A>&, std::remove_reference_t<A>&&>>;
 
 // ---------------------------------------------------------------------------
 // Expectation: fully typed, knows the signature of the mocked function.
@@ -321,8 +349,7 @@ class Expectation final : public ExpectationEntry {
                     std::index_sequence<I...>) {
     using Tuple = std::tuple<ActionArg<std::tuple_element_t<I, std::tuple<Args...>>>...>;
     Tuple tuple(std::forward<ActionArg<std::tuple_element_t<I, std::tuple<Args...>>>>(
-                    *static_cast<std::remove_reference_t<
-                        std::tuple_element_t<I, std::tuple<Args...>>>*>(args[I]))...);
+                    ArgValue<std::tuple_element_t<I, std::tuple<Args...>>>(args[I]))...);
     if constexpr (std::is_void_v<Ret>) {
       std::apply(action, std::move(tuple));
     } else if constexpr (std::is_lvalue_reference_v<Ret>) {
@@ -523,11 +550,10 @@ template <class Ret, class... Args>
 Ret MockInvoke(const MockBase& mock, const char* name, std::source_location location, Args&... args) {
   // The arguments travel to the expectation as a span of pointers; the
   // expectation casts them back to the exact types of the mocked function.
-  // The cast drops the const of a `const T&` parameter: the pointee is the
-  // caller's object, and the expectation only reads it (or moves out of it
-  // when the parameter is move only).
-  std::array<void*, sizeof...(Args)> arg_ptrs{
-      const_cast<void*>(static_cast<const void*>(std::addressof(args)))...};
+  // The span holds pointers to const, so the expectation cannot change an
+  // argument that belongs to the caller.
+  std::array<const void*, sizeof...(Args)> arg_ptrs{
+      static_cast<const void*>(std::addressof(args))...};
   const ArgSpan args_span(arg_ptrs);
 
   bool saturated = false;
