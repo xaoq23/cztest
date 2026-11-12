@@ -202,6 +202,12 @@ class TestContext {
     failures_.push_back(FailureRecord{location, std::move(message)});
   }
 
+  /// Forgets the failures that were recorded so far.
+  ///
+  /// The framework's own tests use it to look at what a failing mock reports
+  /// without failing the test that looks at it.
+  void ClearFailures() { failures_.clear(); }
+
   void AddMock(MockVerifier* mock) { mocks_.push_back(mock); }
 
   void RemoveMock(MockVerifier* mock) {

@@ -175,6 +175,9 @@ class ExpectationEntry {
   virtual bool Saturated() const = 0;
   virtual bool Satisfied() const = 0;
   virtual std::string Describe() const = 0;
+  /// Describes how many calls the expectation allows and how many it got.
+  /// Used when a call goes over the limit.
+  virtual std::string DescribeLimit() const = 0;
   virtual std::source_location Site() const = 0;
 };
 
@@ -200,7 +203,7 @@ template <class... Args>
 std::string DescribeCall(const char* name, const Args&... args) {
   std::string message = "Unexpected call to mocked function '";
   message += name;
-  message += "'(";
+  message += "' with (";
   bool first = true;
   (AppendArg(message, first, PrintValue(args)), ...);
   (void)first;
@@ -274,6 +277,18 @@ class Expectation final : public ExpectationEntry {
   }
 
   std::source_location Site() const override { return site_; }
+
+  std::string DescribeLimit() const override {
+    std::string message = "the expectation with (";
+    bool first = true;
+    DescribeMatchers(message, first, std::index_sequence_for<Args...>{});
+    message += ") allows ";
+    message += std::to_string(max_ >= 0 ? max_ : min_);
+    message += " time(s) and was already used ";
+    message += std::to_string(count_);
+    message += " time(s)";
+    return message;
+  }
 
   // --- configuration -----------------------------------------------------
   void SetCardinality(Cardinality cardinality) {
@@ -449,6 +464,22 @@ class MockBase : public detail::MockVerifier {
     return it->second.front()->Site();
   }
 
+  /// Lists the expectations that a method has; an empty string when it has
+  /// none.  It tells the reader what the mock was expecting when a call did
+  /// not match.
+  std::string DescribeExpectations(const char* name) const {
+    const auto it = expectations_.find(name);
+    if (it == expectations_.end() || it->second.empty()) return {};
+    std::string message = "The expectations for '";
+    message += name;
+    message += "' are:";
+    for (const auto& entry : it->second) {
+      message += "\n    ";
+      message += entry->Describe();
+    }
+    return message;
+  }
+
  private:
   mutable std::map<std::string, std::vector<std::shared_ptr<detail::ExpectationEntry>>> expectations_;
   bool verified_{false};
@@ -505,8 +536,13 @@ Ret MockInvoke(const MockBase& mock, const char* name, std::source_location loca
     // Point at the expectation that did not match: that is the line in the
     // test the reader has to change.
     const auto site = mock.ExpectationSite(name);
-    ReportFailure(::cztest::detail::HasLocation(site) ? site : location,
-                  DescribeCall(name, args...), false);
+    std::string message = DescribeCall(name, args...);
+    const auto expectations = mock.DescribeExpectations(name);
+    if (!expectations.empty()) {
+      message += "\n";
+      message += expectations;
+    }
+    ReportFailure(::cztest::detail::HasLocation(site) ? site : location, message, false);
     if constexpr (std::is_void_v<Ret>) {
       return;
     } else if constexpr (std::is_lvalue_reference_v<Ret>) {
@@ -520,9 +556,9 @@ Ret MockInvoke(const MockBase& mock, const char* name, std::source_location loca
     }
   }
   if (saturated) {
-    ReportFailure(std::source_location::current(),
+    ReportFailure(entry->Site(),
                   "Mocked function '" + std::string(name) + "' was called more times than expected: " +
-                      entry->Describe(),
+                      entry->DescribeLimit(),
                   false);
   }
   entry->CountCall();

@@ -319,8 +319,9 @@ An action may capture a **move only** object; cztest ships its own move only cal
 instead of relying on `std::move_only_function`, which not every library provides.
 
 A mock is strict: a call that matches no expectation fails immediately and prints the
-arguments it received, and an expectation whose count is not met is reported when the
-test ends.
+arguments it received together with the expectations that were set, and an expectation
+whose count is not met is reported when the test ends. A call that goes over the limit
+of an expectation is reported at the line of that expectation.
 
 #### Matchers
 

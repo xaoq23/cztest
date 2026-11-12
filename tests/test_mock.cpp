@@ -2,6 +2,7 @@
 #include <cztest/cztest.hpp>
 
 #include <memory>
+#include <source_location>
 #include <string>
 #include <vector>
 
@@ -232,4 +233,67 @@ TEST(Mock, Matchers) {  EXPECT_TRUE(cztest::Eq(3).Matches(3));
   const int* null_pointer = nullptr;
   EXPECT_TRUE(cztest::IsNull().Matches(null_pointer));
   EXPECT_TRUE(cztest::NotNull().Matches(&null_pointer));
+}
+
+// --- what a failing mock reports -------------------------------------------
+namespace {
+
+// The failures of the running test, cleared afterwards so that the test can
+// look at them without failing itself.
+std::vector<cztest::detail::FailureRecord> TakeFailures() {
+  auto* context = cztest::detail::TestContext::Current();
+  if (context == nullptr) return {};
+  std::vector<cztest::detail::FailureRecord> failures = context->failures();
+  context->ClearFailures();
+  return failures;
+}
+
+}  // namespace
+
+TEST(Mock, AnUnexpectedCallNamesTheExpectations) {
+  MockStorage mock;
+  EXPECT_CALL(mock, Get(1)).Times(cztest::AnyNumber()).WillRepeatedly(cztest::Return(0));
+
+  mock.Get(2);  // matches no expectation
+
+  const auto failures = TakeFailures();
+  ASSERT_EQ(failures.size(), 1u);
+  const auto& message = failures.front().message;
+  EXPECT_NE(message.find("Unexpected call to mocked function 'Get' with (2)"), std::string::npos);
+  // The reader learns what the mock was expecting.
+  EXPECT_NE(message.find("The expectations for 'Get' are:"), std::string::npos);
+  EXPECT_NE(message.find("is equal to 1"), std::string::npos);
+}
+
+TEST(Mock, GoingOverTheLimitPointsAtTheExpectation) {
+  std::source_location before{};
+  {
+    MockStorage mock;
+    before = std::source_location::current();
+    EXPECT_CALL(mock, Get(1)).Times(1).WillRepeatedly(cztest::Return(3));
+
+    mock.Get(1);
+    mock.Get(1);  // goes over the limit
+  }  // the mock verifies the count here, so it reports a second failure
+
+  const auto failures = TakeFailures();
+  ASSERT_FALSE(failures.empty());
+  const auto& failure = failures.front();
+  EXPECT_NE(failure.message.find("was called more times than expected"), std::string::npos);
+  // The numbers tell what happened: the limit and how often it was used.
+  EXPECT_NE(failure.message.find("allows 1 time(s) and was already used 1 time(s)"),
+            std::string::npos);
+  // The failure points at the line of the expectation, not at the framework.
+  EXPECT_EQ(failure.location.line(), before.line() + 1);
+}
+
+TEST(Mock, TheExpectationsOfAMethodCanBeListed) {
+  MockStorage mock;
+  EXPECT_CALL(mock, Get(1)).Times(cztest::AnyNumber());
+
+  const auto text = mock.DescribeExpectations("Get");
+  EXPECT_NE(text.find("The expectations for 'Get' are:"), std::string::npos);
+  EXPECT_NE(text.find("is equal to 1"), std::string::npos);
+  // A method without expectations has nothing to list.
+  EXPECT_TRUE(mock.DescribeExpectations("Put").empty());
 }
