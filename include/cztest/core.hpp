@@ -515,60 +515,64 @@ template <class F>
 //
 // The location of the failure is taken from std::source_location, so it points
 // at the assertion in the test source -- including the enclosing function.
-#define CZTEST_CHECK_(result, fatal)                                                  \
-  if (auto cztest_result = (result); cztest_result.ok) {                             \
-  } else                                                                              \
-    ::cztest::detail::FailureRecorder(::std::source_location::current(), fatal) =     \
-        (::cztest::detail::Message(cztest_result.message))
+//
+// The parameter names carry a prefix on purpose: a macro parameter that
+// appears in the user's expression would be substituted into it, so a test
+// with a variable called "result" would break CZTEST_CHECK_.
+#define CZTEST_CHECK_(cztest_expr_, cztest_fatal_)                                          \
+  if (auto cztest_result_ = (cztest_expr_); cztest_result_.ok) {                           \
+  } else                                                                                     \
+    ::cztest::detail::FailureRecorder(::std::source_location::current(), cztest_fatal_) =    \
+        (::cztest::detail::Message(cztest_result_.message))
 
-#define CZTEST_EXPECT_(result) CZTEST_CHECK_((result), false)
-#define CZTEST_ASSERT_(result) CZTEST_CHECK_((result), true)
+#define CZTEST_EXPECT_(cztest_expr_) CZTEST_CHECK_((cztest_expr_), false)
+#define CZTEST_ASSERT_(cztest_expr_) CZTEST_CHECK_((cztest_expr_), true)
 
 // EXPECT_* / ASSERT_* ---------------------------------------------------
-#define EXPECT_TRUE(condition) CZTEST_EXPECT_(::cztest::ExpectTrue((condition), #condition))
-#define EXPECT_FALSE(condition) CZTEST_EXPECT_(::cztest::ExpectFalse((condition), #condition))
-#define ASSERT_TRUE(condition) CZTEST_ASSERT_(::cztest::ExpectTrue((condition), #condition))
-#define ASSERT_FALSE(condition) CZTEST_ASSERT_(::cztest::ExpectFalse((condition), #condition))
+#define EXPECT_TRUE(cztest_cond_) CZTEST_EXPECT_(::cztest::ExpectTrue((cztest_cond_), #cztest_cond_))
+#define EXPECT_FALSE(cztest_cond_) CZTEST_EXPECT_(::cztest::ExpectFalse((cztest_cond_), #cztest_cond_))
+#define ASSERT_TRUE(cztest_cond_) CZTEST_ASSERT_(::cztest::ExpectTrue((cztest_cond_), #cztest_cond_))
+#define ASSERT_FALSE(cztest_cond_) CZTEST_ASSERT_(::cztest::ExpectFalse((cztest_cond_), #cztest_cond_))
 
-#define EXPECT_EQ(a, b) CZTEST_EXPECT_(::cztest::ExpectEqual((a), (b), #a " == " #b))
-#define EXPECT_NE(a, b) CZTEST_EXPECT_(::cztest::ExpectNotEqual((a), (b), #a " != " #b))
-#define EXPECT_LT(a, b) CZTEST_EXPECT_(::cztest::ExpectLess((a), (b), #a " < " #b))
-#define EXPECT_LE(a, b) CZTEST_EXPECT_(::cztest::ExpectLessEqual((a), (b), #a " <= " #b))
-#define EXPECT_GT(a, b) CZTEST_EXPECT_(::cztest::ExpectGreater((a), (b), #a " > " #b))
-#define EXPECT_GE(a, b) CZTEST_EXPECT_(::cztest::ExpectGreaterEqual((a), (b), #a " >= " #b))
+#define EXPECT_EQ(cztest_a_, cztest_b_) CZTEST_EXPECT_(::cztest::ExpectEqual((cztest_a_), (cztest_b_), #cztest_a_ " == " #cztest_b_))
+#define EXPECT_NE(cztest_a_, cztest_b_) CZTEST_EXPECT_(::cztest::ExpectNotEqual((cztest_a_), (cztest_b_), #cztest_a_ " != " #cztest_b_))
+#define EXPECT_LT(cztest_a_, cztest_b_) CZTEST_EXPECT_(::cztest::ExpectLess((cztest_a_), (cztest_b_), #cztest_a_ " < " #cztest_b_))
+#define EXPECT_LE(cztest_a_, cztest_b_) CZTEST_EXPECT_(::cztest::ExpectLessEqual((cztest_a_), (cztest_b_), #cztest_a_ " <= " #cztest_b_))
+#define EXPECT_GT(cztest_a_, cztest_b_) CZTEST_EXPECT_(::cztest::ExpectGreater((cztest_a_), (cztest_b_), #cztest_a_ " > " #cztest_b_))
+#define EXPECT_GE(cztest_a_, cztest_b_) CZTEST_EXPECT_(::cztest::ExpectGreaterEqual((cztest_a_), (cztest_b_), #cztest_a_ " >= " #cztest_b_))
 
-#define ASSERT_EQ(a, b) CZTEST_ASSERT_(::cztest::ExpectEqual((a), (b), #a " == " #b))
-#define ASSERT_NE(a, b) CZTEST_ASSERT_(::cztest::ExpectNotEqual((a), (b), #a " != " #b))
-#define ASSERT_LT(a, b) CZTEST_ASSERT_(::cztest::ExpectLess((a), (b), #a " < " #b))
-#define ASSERT_LE(a, b) CZTEST_ASSERT_(::cztest::ExpectLessEqual((a), (b), #a " <= " #b))
-#define ASSERT_GT(a, b) CZTEST_ASSERT_(::cztest::ExpectGreater((a), (b), #a " > " #b))
-#define ASSERT_GE(a, b) CZTEST_ASSERT_(::cztest::ExpectGreaterEqual((a), (b), #a " >= " #b))
+#define ASSERT_EQ(cztest_a_, cztest_b_) CZTEST_ASSERT_(::cztest::ExpectEqual((cztest_a_), (cztest_b_), #cztest_a_ " == " #cztest_b_))
+#define ASSERT_NE(cztest_a_, cztest_b_) CZTEST_ASSERT_(::cztest::ExpectNotEqual((cztest_a_), (cztest_b_), #cztest_a_ " != " #cztest_b_))
+#define ASSERT_LT(cztest_a_, cztest_b_) CZTEST_ASSERT_(::cztest::ExpectLess((cztest_a_), (cztest_b_), #cztest_a_ " < " #cztest_b_))
+#define ASSERT_LE(cztest_a_, cztest_b_) CZTEST_ASSERT_(::cztest::ExpectLessEqual((cztest_a_), (cztest_b_), #cztest_a_ " <= " #cztest_b_))
+#define ASSERT_GT(cztest_a_, cztest_b_) CZTEST_ASSERT_(::cztest::ExpectGreater((cztest_a_), (cztest_b_), #cztest_a_ " > " #cztest_b_))
+#define ASSERT_GE(cztest_a_, cztest_b_) CZTEST_ASSERT_(::cztest::ExpectGreaterEqual((cztest_a_), (cztest_b_), #cztest_a_ " >= " #cztest_b_))
 
-#define EXPECT_STREQ(a, b) CZTEST_EXPECT_(::cztest::ExpectStringEqual((a), (b), #a, #b))
-#define EXPECT_STRNE(a, b) CZTEST_EXPECT_(::cztest::ExpectStringNotEqual((a), (b), #a, #b))
-#define ASSERT_STREQ(a, b) CZTEST_ASSERT_(::cztest::ExpectStringEqual((a), (b), #a, #b))
-#define ASSERT_STRNE(a, b) CZTEST_ASSERT_(::cztest::ExpectStringNotEqual((a), (b), #a, #b))
+#define EXPECT_STREQ(cztest_a_, cztest_b_) CZTEST_EXPECT_(::cztest::ExpectStringEqual((cztest_a_), (cztest_b_), #cztest_a_, #cztest_b_))
+#define EXPECT_STRNE(cztest_a_, cztest_b_) CZTEST_EXPECT_(::cztest::ExpectStringNotEqual((cztest_a_), (cztest_b_), #cztest_a_, #cztest_b_))
+#define ASSERT_STREQ(cztest_a_, cztest_b_) CZTEST_ASSERT_(::cztest::ExpectStringEqual((cztest_a_), (cztest_b_), #cztest_a_, #cztest_b_))
+#define ASSERT_STRNE(cztest_a_, cztest_b_) CZTEST_ASSERT_(::cztest::ExpectStringNotEqual((cztest_a_), (cztest_b_), #cztest_a_, #cztest_b_))
 
-#define EXPECT_NEAR(a, b, tolerance) CZTEST_EXPECT_(::cztest::ExpectNear((a), (b), (tolerance), #a, #b))
-#define ASSERT_NEAR(a, b, tolerance) CZTEST_ASSERT_(::cztest::ExpectNear((a), (b), (tolerance), #a, #b))
+#define EXPECT_NEAR(cztest_a_, cztest_b_, cztest_tol_) CZTEST_EXPECT_(::cztest::ExpectNear((cztest_a_), (cztest_b_), (cztest_tol_), #cztest_a_, #cztest_b_))
+#define ASSERT_NEAR(cztest_a_, cztest_b_, cztest_tol_) CZTEST_ASSERT_(::cztest::ExpectNear((cztest_a_), (cztest_b_), (cztest_tol_), #cztest_a_, #cztest_b_))
 
-#define EXPECT_DOUBLE_EQ(a, b) CZTEST_EXPECT_(::cztest::ExpectAlmostEqual((a), (b), #a, #b))
-#define EXPECT_FLOAT_EQ(a, b) CZTEST_EXPECT_(::cztest::ExpectAlmostEqual((a), (b), #a, #b))
-#define ASSERT_DOUBLE_EQ(a, b) CZTEST_ASSERT_(::cztest::ExpectAlmostEqual((a), (b), #a, #b))
-#define ASSERT_FLOAT_EQ(a, b) CZTEST_ASSERT_(::cztest::ExpectAlmostEqual((a), (b), #a, #b))
+#define EXPECT_DOUBLE_EQ(cztest_a_, cztest_b_) CZTEST_EXPECT_(::cztest::ExpectAlmostEqual((cztest_a_), (cztest_b_), #cztest_a_, #cztest_b_))
+#define EXPECT_FLOAT_EQ(cztest_a_, cztest_b_) CZTEST_EXPECT_(::cztest::ExpectAlmostEqual((cztest_a_), (cztest_b_), #cztest_a_, #cztest_b_))
+#define ASSERT_DOUBLE_EQ(cztest_a_, cztest_b_) CZTEST_ASSERT_(::cztest::ExpectAlmostEqual((cztest_a_), (cztest_b_), #cztest_a_, #cztest_b_))
+#define ASSERT_FLOAT_EQ(cztest_a_, cztest_b_) CZTEST_ASSERT_(::cztest::ExpectAlmostEqual((cztest_a_), (cztest_b_), #cztest_a_, #cztest_b_))
 
-#define EXPECT_THROW(statement, exception_type) \
-  CZTEST_EXPECT_(::cztest::ExpectThrow<exception_type>([&]() { statement; }, #statement, #exception_type))
-#define ASSERT_THROW(statement, exception_type) \
-  CZTEST_ASSERT_(::cztest::ExpectThrow<exception_type>([&]() { statement; }, #statement, #exception_type))
-#define EXPECT_NO_THROW(statement) \
-  CZTEST_EXPECT_(::cztest::ExpectNoThrow([&]() { statement; }, #statement))
-#define ASSERT_NO_THROW(statement) \
-  CZTEST_ASSERT_(::cztest::ExpectNoThrow([&]() { statement; }, #statement))
-#define EXPECT_ANY_THROW(statement) \
-  CZTEST_EXPECT_(::cztest::ExpectAnyThrow([&]() { statement; }, #statement))
-#define ASSERT_ANY_THROW(statement) \
-  CZTEST_ASSERT_(::cztest::ExpectAnyThrow([&]() { statement; }, #statement))
+#define EXPECT_THROW(cztest_stmt_, cztest_type_) \
+  CZTEST_EXPECT_(::cztest::ExpectThrow<cztest_type_>([&]() { cztest_stmt_; }, #cztest_stmt_, #cztest_type_))
+#define ASSERT_THROW(cztest_stmt_, cztest_type_) \
+  CZTEST_ASSERT_(::cztest::ExpectThrow<cztest_type_>([&]() { cztest_stmt_; }, #cztest_stmt_, #cztest_type_))
+#define EXPECT_NO_THROW(cztest_stmt_) \
+  CZTEST_EXPECT_(::cztest::ExpectNoThrow([&]() { cztest_stmt_; }, #cztest_stmt_))
+#define ASSERT_NO_THROW(cztest_stmt_) \
+  CZTEST_ASSERT_(::cztest::ExpectNoThrow([&]() { cztest_stmt_; }, #cztest_stmt_))
+#define EXPECT_ANY_THROW(cztest_stmt_) \
+  CZTEST_EXPECT_(::cztest::ExpectAnyThrow([&]() { cztest_stmt_; }, #cztest_stmt_))
+#define ASSERT_ANY_THROW(cztest_stmt_) \
+  CZTEST_ASSERT_(::cztest::ExpectAnyThrow([&]() { cztest_stmt_; }, #cztest_stmt_))
 
 #define ADD_FAILURE() CZTEST_EXPECT_(::cztest::AssertionResult::Failure(""))
 #define FAIL() CZTEST_ASSERT_(::cztest::AssertionResult::Failure(""))
