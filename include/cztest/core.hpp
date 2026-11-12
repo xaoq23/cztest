@@ -609,6 +609,27 @@ template <class T, class E>
 #define EXPECT_OK(expr) CZTEST_EXPECT_OK((expr))
 #define ASSERT_OK(expr) CZTEST_ASSERT_OK((expr))
 
+#else  // __cpp_lib_expected
+
+namespace detail {
+
+/// A condition that is always false, so that a static_assert fires.
+template <class T = void>
+inline constexpr bool kAlwaysFalse = false;
+
+}  // namespace detail
+
+// The macros exist in every mode: using one of them gives an error that says
+// what to do, instead of "EXPECT_OK was not declared in this scope".
+#define CZTEST_EXPECT_OK(cztest_expr_)                                                \
+  static_assert(::cztest::detail::kAlwaysFalse<>,                                     \
+                "cztest: EXPECT_OK needs std::expected, which needs C++23. Compile "    \
+                "with -std=c++23, or check the result by hand: "                         \
+                "EXPECT_TRUE(result.has_value()).")
+#define CZTEST_ASSERT_OK(cztest_expr_) CZTEST_EXPECT_OK((cztest_expr_))
+#define EXPECT_OK(expr) CZTEST_EXPECT_OK((expr))
+#define ASSERT_OK(expr) CZTEST_ASSERT_OK((expr))
+
 #endif  // __cpp_lib_expected
 
 // ---------------------------------------------------------------------------
