@@ -766,10 +766,25 @@ namespace detail {
 struct TestInfo {
   std::string suite;
   std::string name;
-  std::function<void()> body;
+  // The body of a plain test is a plain function pointer.  A std::function
+  // that is built from a lambda builds a class of its own for every lambda,
+  // and the compiler has to build one for every test; that costs about
+  // twelve milliseconds per test.
+  void (*body)();
+  // A parameterised test carries its value, so it needs a callable that can
+  // hold something.  There is one per case, and there are few of them.
+  std::function<void()> stateful_body;
   std::source_location location{};
 
   std::string full_name() const { return suite + "." + name; }
+
+  void Run() const {
+    if (body != nullptr) {
+      body();
+    } else {
+      stateful_body();
+    }
+  }
 };
 
 class Registry {
@@ -789,9 +804,14 @@ class Registry {
 
 class Registrar {
  public:
+  // The body is a plain function pointer and not a std::function: a
+  // std::function that is built from a lambda builds a class of its own for
+  // every lambda, and the compiler has to build one for every test.  That
+  // costs about twelve milliseconds per test, which is more than the test
+  // itself takes to run.
   Registrar(std::string_view suite, std::string_view name, std::source_location location,
-             std::function<void()> body) {
-    Registry::Get().Add(TestInfo{std::string(suite), std::string(name), std::move(body), location});
+             void (*body)()) {
+    Registry::Get().Add(TestInfo{std::string(suite), std::string(name), body, {}, location});
   }
 };
 
@@ -1247,7 +1267,7 @@ class TestRunner {
     std::string skip_reason;
     const auto started = std::chrono::steady_clock::now();
     try {
-      test.body();
+      test.Run();
     } catch (const FatalAssertionFailure&) {
       // The assertion already reported the failure; abort the test body.
     } catch (const SkipTest& skip) {

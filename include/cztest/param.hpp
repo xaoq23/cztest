@@ -173,8 +173,8 @@ inline void ResolveParamInstantiations() {
       for (std::size_t index = 0; index < pending->values.size(); ++index) {
         auto body = pending->factory(pattern, pending->values[index]);
         Registry::Get().Add(TestInfo{pending->prefix + "/" + pattern.fixture,
-                                    pattern.test + "/" + std::to_string(index), std::move(body),
-                                    pattern.location});
+                                    pattern.test + "/" + std::to_string(index), nullptr,
+                                    std::move(body), pattern.location});
       }
     }
   }
