@@ -3,6 +3,7 @@
 #include <cztest/cztest.hpp>
 
 #include <cmath>
+#include <source_location>
 #include <string>
 
 // --- the predicates are usable in a static_assert -------------------------
@@ -101,4 +102,30 @@ TEST(Modern, FloatingPointValuesArePrintedWithRoundTripPrecision) {
   const auto result = cztest::ExpectEqual(0.1 + 0.2, 0.3);
   EXPECT_TRUE(result.failed());
   EXPECT_NE(result.message.find("0.30000000000000004"), std::string::npos);
+}
+
+// --- the failure location ----------------------------------------------------
+namespace {
+
+std::source_location LocationInHelper() { return std::source_location::current(); }
+
+}  // namespace
+
+TEST(Modern, TheGeneratedFunctionNameIsNotShown) {
+  // The assertion sits in the body that the framework generated, so its
+  // name would tell the reader nothing.
+  const auto text = cztest::detail::DescribeLocation(std::source_location::current());
+  EXPECT_EQ(text.find("cztest_body"), std::string::npos);
+  EXPECT_EQ(text.find('('), std::string::npos);
+}
+
+TEST(Modern, TheUserFunctionNameIsShown) {
+  const auto text = cztest::detail::DescribeLocation(LocationInHelper());
+  EXPECT_NE(text.find("LocationInHelper"), std::string::npos);
+}
+
+TEST(Modern, TheCallingConventionIsNotShown) {
+  // Clang on Windows writes it into the name of the function.
+  EXPECT_EQ(cztest::detail::CleanFunctionName("int __cdecl demo::Helper(int)"),
+            "int demo::Helper(int)");
 }

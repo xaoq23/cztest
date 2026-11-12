@@ -949,6 +949,33 @@ inline bool HasLocation(std::source_location location) {
   return location.file_name() != nullptr && *location.file_name() != '\0';
 }
 
+/// Whether a function name belongs to a body that the framework generated.
+///
+/// The name is searched for anywhere in the text, because the compilers
+/// print it in their own way: GCC and Clang put the return type and the
+/// parameters in front of and behind it, MSVC prints the plain name.
+inline bool IsGeneratedFunction(std::string_view name) {
+  return name.find("cztest_body_") != std::string_view::npos ||
+         name.find("cztest_fixture_") != std::string_view::npos ||
+         name.find("cztest_param_fixture_") != std::string_view::npos;
+}
+
+/// Removes the calling convention from a function name.
+///
+/// Clang on Windows writes it into the name ("int __cdecl demo::Helper(int)"),
+/// which tells the reader nothing about the code.
+inline std::string CleanFunctionName(std::string_view name) {
+  std::string text(name);
+  for (const char* convention : {"__cdecl", "__stdcall", "__fastcall", "__vectorcall"}) {
+    const std::string token = std::string(" ") + convention;
+    std::size_t at = 0;
+    while ((at = text.find(token, at)) != std::string::npos) {
+      text.erase(at, token.size());
+    }
+  }
+  return text;
+}
+
 /// Renders a source location as "file:line (function)".
 ///
 /// The function name is omitted when the assertion sits directly in a test
@@ -963,10 +990,9 @@ inline std::string DescribeLocation(std::source_location location) {
   const char* function = location.function_name();
   if (function != nullptr && *function != '\0') {
     const std::string_view name(function);
-    const bool generated = name.find("cztest_") == 0 || name.find("cztest_body") == 0;
-    if (!generated) {
+    if (!IsGeneratedFunction(name)) {
       text += " (";
-      text += name;
+      text += CleanFunctionName(name);
       text += ")";
     }
   }
