@@ -401,6 +401,20 @@ Expected: Get(1) == 2
 
 The exit code is 0 when everything passed or was skipped, and 1 otherwise.
 
+Two tests with the same name are a mistake, so the runner refuses to start and says
+where the copies are:
+
+```
+[==========] Duplicate test names:
+  Math.Addition
+    C:\path\tests\test_a.cpp:10
+    C:\path\tests\test_b.cpp:14
+Every test needs its own name: rename the ones that repeat.
+```
+
+The compiler cannot catch this, because the tests live in different translation
+units; the runner can, because it sees them all.
+
 ## With cizon2
 
 ```toml

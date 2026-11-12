@@ -19,6 +19,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -767,6 +768,42 @@ class Registrar {
   }
 };
 
+/// A test name that more than one test uses.
+struct DuplicateTest {
+  std::string full_name;
+  std::vector<std::source_location> locations;
+};
+
+/// Finds the names that are used by more than one test.
+///
+/// Two tests with the same "Suite.Name" are a mistake: they cannot be told
+/// apart in the output, and a --filter selects both of them.  The compiler
+/// cannot catch it, because the tests live in different translation units.
+inline std::vector<DuplicateTest> FindDuplicateTests(const std::vector<TestInfo>& tests) {
+  std::map<std::string, std::vector<std::source_location>> by_name;
+  for (const auto& test : tests) {
+    by_name[test.full_name()].push_back(test.location);
+  }
+
+  std::vector<DuplicateTest> duplicates;
+  for (const auto& [name, locations] : by_name) {
+    if (locations.size() < 2) continue;
+    // The registration order of the translation units is not fixed, so the
+    // places are sorted to keep the report the same from run to run.
+    auto sorted = locations;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const std::source_location& a, const std::source_location& b) {
+                const char* file_a = a.file_name() != nullptr ? a.file_name() : "";
+                const char* file_b = b.file_name() != nullptr ? b.file_name() : "";
+                const int by_file = std::strcmp(file_a, file_b);
+                if (by_file != 0) return by_file < 0;
+                return a.line() < b.line();
+              });
+    duplicates.push_back(DuplicateTest{name, std::move(sorted)});
+  }
+  return duplicates;
+}
+
 }  // namespace detail
 
 // Fixture base class -------------------------------------------------------
@@ -936,6 +973,18 @@ inline std::string DescribeLocation(std::source_location location) {
   return text;
 }
 
+/// Renders a source location as "file:line".
+///
+/// Used for the place where a test was registered: there the function name
+/// is the one of the generated initialiser, which tells the reader nothing.
+inline std::string DescribePlace(std::source_location location) {
+  if (!HasLocation(location)) return "<unknown location>";
+  std::string text = location.file_name();
+  text += ":";
+  text += std::to_string(location.line());
+  return text;
+}
+
 class TestRunner {
  public:
   explicit TestRunner(const RunOptions& options) : options_(options) {}
@@ -948,6 +997,26 @@ class TestRunner {
 
     auto& registry = Registry::Get();
     const auto& all = registry.tests();
+
+    const bool color = options_.color_set ? options_.color : StdoutIsTty();
+    Console console(color);
+    const bool quiet = options_.quiet;
+
+    // Two tests with the same name are a mistake, so the runner refuses to
+    // start and says where the copies are.
+    const auto duplicates = FindDuplicateTests(all);
+    if (!duplicates.empty()) {
+      console.Print("\033[0;31m", "[==========] Duplicate test names:");
+      for (const auto& duplicate : duplicates) {
+        console.Print(nullptr, "  " + duplicate.full_name);
+        for (const auto& location : duplicate.locations) {
+          console.Print(nullptr, "    " + DescribePlace(location));
+        }
+      }
+      console.Print(nullptr,
+                    "Every test needs its own name: rename the ones that repeat.");
+      return 1;
+    }
 
     std::vector<const TestInfo*> selected;
     for (const auto& test : all) {
@@ -962,10 +1031,6 @@ class TestRunner {
       }
       return 0;
     }
-
-    const bool color = options_.color_set ? options_.color : StdoutIsTty();
-    Console console(color);
-    const bool quiet = options_.quiet;
 
     std::vector<std::string> failed;
     std::vector<std::string> skipped_tests;

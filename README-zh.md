@@ -391,6 +391,19 @@ Expected: Get(1) == 2
 
 退出码：全部通过或跳过是 0 ✓，否则是 1 ✓。
 
+两个用例重名是一个错误 ✓ —— 运行器会拒绝启动 ✓ 并指出两处的位置 ✓：
+
+```
+[==========] Duplicate test names:
+  Math.Addition
+    C:\path\tests\test_a.cpp:10
+    C:\path\tests\test_b.cpp:14
+Every test needs its own name: rename the ones that repeat.
+```
+
+编译器抓不到这件事 ✓ —— 因为用例分布在不同的翻译单元里 ✓；运行器能抓到 ✓，
+因为它全都看得见 ✓。
+
 ## 与 cizon2 集成
 
 ```toml

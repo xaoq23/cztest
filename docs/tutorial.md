@@ -552,6 +552,7 @@ cizon2 会自动加上 `-Ideps/cztest/include`，所以依赖方**一行 `-I` �
 | 报 "Unexpected call to mocked function" | mock 被调用的方式与期望不符 | 检查参数匹配器和调用顺序 |
 | 报 "was called N time(s). Use WillRepeatedly()" | 期望被调了多次 | 加 `.WillRepeatedly(...)` 或改 `.Times(n)` |
 | 报 "Mock expectation failed" | 期望的次数没满足 | 检查 `.Times(...)` 与实际调用次数 |
+| 报 "Duplicate test names" | 两个用例同名（多半在不同的文件里） | 改掉其中一个的名字 |
 | `cztest::Values(a, b,)` 编译报错 | 函数调用不能带尾逗号 | 去掉尾逗号 |
 | 宏里写了 `EXPECT_EQ(a, b) << "x"` 但 `else` 跑错了分支 | 不会发生：cztest 用 `if (init; cond)` 形式，用户自己的 `else` 仍然绑到用户的 `if` | — |
 | 断言位置显示的是奇怪函数名 | 断言在 helper 里 | 正常，helper 名会显示出来 |
