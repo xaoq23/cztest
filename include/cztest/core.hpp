@@ -46,7 +46,7 @@ namespace cztest {
 // The version of the framework.
 // ---------------------------------------------------------------------------
 #define CZTEST_VERSION_MAJOR 0
-#define CZTEST_VERSION_MINOR 3
+#define CZTEST_VERSION_MINOR 4
 #define CZTEST_VERSION_PATCH 0
 
 // ---------------------------------------------------------------------------
