@@ -218,21 +218,25 @@ inline const ParamResolverRegistrar param_resolver_registrar{};
   void CZTEST_PARAM_FIXTURE_(fixture, name)::TestBody()
 
 /// Expands a parameterised test into one test per value.
-#define INSTANTIATE_TEST_SUITE_P(prefix, fixture, generator)                                 \
-  static const ::cztest::detail::PendingInstantiation CZTEST_CONCAT(cztest_param_instance_, \
-                                                                      __LINE__)(               \
-      #prefix, #fixture, ::cztest::detail::MakeParamValues(generator),                        \
-      [](const ::cztest::detail::ParamPattern& pattern,                                       \
-         const std::shared_ptr<void>& raw) {                                                  \
-        using ParamType = typename fixture::ParamType;                                        \
-        const ParamType value = *static_cast<const ParamType*>(raw.get());                    \
-        return std::function<void()>{[pattern, value]() {                                      \
-          fixture instance;                                                                   \
-          instance.SetParam(value);                                                           \
-          static_cast<::cztest::Test&>(instance).SetUp();                                     \
-          pattern.body(instance);                                                            \
-          static_cast<::cztest::Test&>(instance).TearDown();                                  \
-        }};                                                                                   \
+///
+/// The generator is taken as a variadic argument on purpose: a value list
+/// such as cztest::Values(Case{1, 2}, Case{3, 4}) contains commas inside
+/// braces, and only a variadic parameter keeps them together.
+#define INSTANTIATE_TEST_SUITE_P(prefix, fixture, ...)                                         \
+  static const ::cztest::detail::PendingInstantiation CZTEST_CONCAT(cztest_param_instance_,    \
+                                                                      __LINE__)(                   \
+      #prefix, #fixture, ::cztest::detail::MakeParamValues(__VA_ARGS__),                        \
+      [](const ::cztest::detail::ParamPattern& pattern,                                         \
+         const std::shared_ptr<void>& raw) {                                                    \
+        using ParamType = typename fixture::ParamType;                                          \
+        const ParamType value = *static_cast<const ParamType*>(raw.get());                      \
+        return std::function<void()>{[pattern, value]() {                                        \
+          fixture instance;                                                                     \
+          instance.SetParam(value);                                                             \
+          static_cast<::cztest::Test&>(instance).SetUp();                                       \
+          pattern.body(instance);                                                              \
+          static_cast<::cztest::Test&>(instance).TearDown();                                    \
+        }};                                                                                     \
       })
 
 #endif  // CZTEST_PARAM_HPP
