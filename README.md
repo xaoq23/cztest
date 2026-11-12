@@ -449,6 +449,15 @@ cizon2 会自动加上 `-Ideps/cztest/include` 和 `-Ideps/cztest`，所以依�
 
 ---
 
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [docs/tutorial.md](docs/tutorial.md) | 完整使用教程：从最小用例到集成测试 |
+| [docs/migration-gtest.md](docs/migration-gtest.md) | 从 GoogleTest 迁移过来要改什么（附实测编译记录） |
+
+---
+
 ## License
 
 MIT
