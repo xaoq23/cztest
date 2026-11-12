@@ -646,4 +646,4 @@ death tests: all of it is in the documentation rather than left to a guess.
 
 ## License
 
-MIT
+Apache-2.0 — the full text is in [LICENSE](LICENSE).

@@ -1,6 +1,6 @@
 // cztest - argument matchers used by the mock framework.
 //
-// License: MIT
+// License: Apache-2.0
 #ifndef CZTEST_MATCHERS_HPP
 #define CZTEST_MATCHERS_HPP
 

@@ -21,7 +21,7 @@
 // The generated tests are named "Basic/AdderTest.AddsCorrectly/0" and can be
 // selected with --filter.
 //
-// License: MIT
+// License: Apache-2.0
 #ifndef CZTEST_PARAM_HPP
 #define CZTEST_PARAM_HPP
 

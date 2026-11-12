@@ -20,7 +20,7 @@
 //
 //     or define CZTEST_IMPLEMENT_MAIN before including the header.
 //
-// License: MIT
+// License: Apache-2.0
 #ifndef CZTEST_CZTEST_HPP
 #define CZTEST_CZTEST_HPP
 

@@ -9,6 +9,8 @@
 // The header is included by <cztest/cztest.hpp>.  Define CZTEST_NO_COMPAT
 // before including it to leave the global namespace alone (for example when
 // GoogleTest is used next to cztest).
+//
+// License: Apache-2.0
 
 #ifndef CZTEST_COMPAT_HPP
 #define CZTEST_COMPAT_HPP

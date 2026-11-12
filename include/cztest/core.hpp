@@ -2,7 +2,7 @@
 //
 // core.hpp - test registry, assertions, runner and reporting.
 //
-// License: MIT
+// License: Apache-2.0
 #ifndef CZTEST_CORE_HPP
 #define CZTEST_CORE_HPP
 

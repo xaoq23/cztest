@@ -23,7 +23,7 @@
 //     EXPECT_EQ(mock.Get(42), 7);
 //   }
 //
-// License: MIT
+// License: Apache-2.0
 #ifndef CZTEST_MOCK_HPP
 #define CZTEST_MOCK_HPP
 

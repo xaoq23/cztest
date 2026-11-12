@@ -620,4 +620,4 @@ mock 方法由 `override` 对照接口检查 ✓，两个护栏覆盖虚析构�
 
 ## License
 
-MIT
+Apache-2.0 —— 全文见 [LICENSE](LICENSE)。
