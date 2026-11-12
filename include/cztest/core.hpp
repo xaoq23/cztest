@@ -1136,6 +1136,7 @@ class TestRunner {
 
     std::vector<FailedTest> failed;
     std::vector<SkippedTest> skipped_tests;
+    std::map<std::string, double> durations;
     int total_run = 0;
     const auto start = std::chrono::steady_clock::now();
 
@@ -1156,6 +1157,7 @@ class TestRunner {
         }
         const auto result = RunSingle(*test);
         total_run += result.counted ? 1 : 0;
+        durations[test->full_name()] = result.seconds;
         const std::string run_note =
             repeated ? " (run " + std::to_string(repeat + 1) + " of " +
                            std::to_string(options_.repeat) + ")"
@@ -1205,7 +1207,7 @@ class TestRunner {
     }
 
     if (!options_.junit_path.empty()) {
-      WriteJUnitXml(options_.junit_path, selected, failed, skipped_tests);
+      WriteJUnitXml(options_.junit_path, selected, failed, skipped_tests, durations);
     }
 
     return failed.empty() ? 0 : 1;
@@ -1217,6 +1219,7 @@ class TestRunner {
     bool counted{true};
     bool skipped{false};
     std::string skip_reason;
+    double seconds{0.0};
     std::vector<FailureRecord> failures;
   };
 
@@ -1242,6 +1245,7 @@ class TestRunner {
     ctx->Begin(test.full_name());
     bool skipped = false;
     std::string skip_reason;
+    const auto started = std::chrono::steady_clock::now();
     try {
       test.body();
     } catch (const FatalAssertionFailure&) {
@@ -1260,6 +1264,7 @@ class TestRunner {
     result.passed = !ctx->HasFailures();
     result.skipped = skipped;
     result.skip_reason = std::move(skip_reason);
+    result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     if (skipped) {
       // A skipped test did not really run: its failures do not count.
       result.failures.clear();
@@ -1287,9 +1292,20 @@ class TestRunner {
     return out;
   }
 
+  /// Renders a duration in seconds, with the microsecond precision that the
+  /// dashboards of the CI expect.
+  static std::string FormatSeconds(double seconds) {
+    std::ostringstream out;
+    out.setf(std::ios::fixed, std::ios::floatfield);
+    out.precision(6);
+    out << seconds;
+    return out.str();
+  }
+
   static void WriteJUnitXml(const std::string& path, const std::vector<const TestInfo*>& tests,
                              const std::vector<FailedTest>& failed,
-                             const std::vector<SkippedTest>& skipped) {
+                             const std::vector<SkippedTest>& skipped,
+                             const std::map<std::string, double>& durations) {
     std::ofstream file(path);
     if (!file) return;
     file << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
@@ -1301,11 +1317,14 @@ class TestRunner {
       const auto skip = std::find_if(skipped.begin(), skipped.end(), [&](const SkippedTest& entry) {
         return entry.name == test->full_name();
       });
+      const auto duration = durations.find(test->full_name());
+      const std::string time =
+          duration == durations.end() ? std::string("0.000000") : FormatSeconds(duration->second);
 
       file << "  <testsuite name=\"" << EscapeXml(test->suite) << "\" tests=\"1\" failures=\""
-           << (failure == failed.end() ? 0 : 1) << "\">\n";
+           << (failure == failed.end() ? 0 : 1) << "\" time=\"" << time << "\">\n";
       file << "    <testcase classname=\"" << EscapeXml(test->suite) << "\" name=\""
-           << EscapeXml(test->name) << "\"";
+           << EscapeXml(test->name) << "\" time=\"" << time << "\"";
       if (failure != failed.end()) {
         file << ">\n";
         for (const auto& record : failure->failures) {
