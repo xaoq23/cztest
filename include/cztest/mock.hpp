@@ -379,6 +379,14 @@ class MockBase : public detail::MockVerifier {
     return saturated;
   }
 
+  /// Where the expectations of a method were declared; an empty location when
+  /// the method has none.
+  std::source_location ExpectationSite(const char* name) const {
+    const auto it = expectations_.find(name);
+    if (it == expectations_.end() || it->second.empty()) return {};
+    return it->second.front()->Site();
+  }
+
  private:
   mutable std::map<std::string, std::vector<std::shared_ptr<detail::ExpectationEntry>>> expectations_;
   bool verified_{false};
@@ -419,7 +427,7 @@ namespace detail {
 // MockInvoke: called from the generated mock method.
 // ---------------------------------------------------------------------------
 template <class Ret, class... Args>
-Ret MockInvoke(const MockBase& mock, const char* name, Args&... args) {
+Ret MockInvoke(const MockBase& mock, const char* name, std::source_location location, Args&... args) {
   // The arguments travel to the expectation as a span of pointers; the
   // expectation casts them back to the exact types of the mocked function.
   // The cast drops the const of a `const T&` parameter: the pointee is the
@@ -432,7 +440,11 @@ Ret MockInvoke(const MockBase& mock, const char* name, Args&... args) {
   bool saturated = false;
   auto* entry = mock.FindExpectation(name, args_span, &saturated);
   if (entry == nullptr) {
-    ReportFailure(std::source_location::current(), DescribeCall(name, args...), false);
+    // Point at the expectation that did not match: that is the line in the
+    // test the reader has to change.
+    const auto site = mock.ExpectationSite(name);
+    ReportFailure(::cztest::detail::HasLocation(site) ? site : location,
+                  DescribeCall(name, args...), false);
     if constexpr (std::is_void_v<Ret>) {
       return;
     } else if constexpr (std::is_lvalue_reference_v<Ret>) {
@@ -553,7 +565,7 @@ auto Invoke(F callable) {
     static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
         "A mock class has to inherit cztest::MockBase: " \
         "class MockX : public IX, public cztest::MockBase { ... };");           \
-    return ::cztest::detail::MockInvoke<ret>(*this, #name);                           \
+    return ::cztest::detail::MockInvoke<ret>(*this, #name, ::std::source_location::current());                           \
   }                                                                                 \
   auto gmock_##name() Q {                                                            \
     return ::cztest::detail::MakeSpec<ret>(*this, #name);                             \
@@ -564,7 +576,7 @@ auto Invoke(F callable) {
     static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
         "A mock class has to inherit cztest::MockBase: " \
         "class MockX : public IX, public cztest::MockBase { ... };");           \
-    return ::cztest::detail::MockInvoke<ret, t1>(*this, #name, a1);                                 \
+    return ::cztest::detail::MockInvoke<ret, t1>(*this, #name, ::std::source_location::current(), a1);                                 \
   }                                                                                               \
   template <class M1>                                                                             \
   auto gmock_##name(M1&& m1) Q {                                                                   \
@@ -577,7 +589,7 @@ auto Invoke(F callable) {
     static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
         "A mock class has to inherit cztest::MockBase: " \
         "class MockX : public IX, public cztest::MockBase { ... };");           \
-    return ::cztest::detail::MockInvoke<ret, t1, t2>(*this, #name, a1, a2);                         \
+    return ::cztest::detail::MockInvoke<ret, t1, t2>(*this, #name, ::std::source_location::current(), a1, a2);                         \
   }                                                                                               \
   template <class M1, class M2>                                                                   \
   auto gmock_##name(M1&& m1, M2&& m2) Q {                                                         \
@@ -591,7 +603,7 @@ auto Invoke(F callable) {
     static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
         "A mock class has to inherit cztest::MockBase: " \
         "class MockX : public IX, public cztest::MockBase { ... };");           \
-    return ::cztest::detail::MockInvoke<ret, t1, t2, t3>(*this, #name, a1, a2, a3);                  \
+    return ::cztest::detail::MockInvoke<ret, t1, t2, t3>(*this, #name, ::std::source_location::current(), a1, a2, a3);                  \
   }                                                                                               \
   template <class M1, class M2, class M3>                                                          \
   auto gmock_##name(M1&& m1, M2&& m2, M3&& m3) Q {                                                \
@@ -606,7 +618,7 @@ auto Invoke(F callable) {
     static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
         "A mock class has to inherit cztest::MockBase: " \
         "class MockX : public IX, public cztest::MockBase { ... };");           \
-    return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4>(*this, #name, a1, a2, a3, a4);          \
+    return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4>(*this, #name, ::std::source_location::current(), a1, a2, a3, a4);          \
   }                                                                                               \
   template <class M1, class M2, class M3, class M4>                                               \
   auto gmock_##name(M1&& m1, M2&& m2, M3&& m3, M4&& m4) Q {                                       \
@@ -622,7 +634,7 @@ auto Invoke(F callable) {
     static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
         "A mock class has to inherit cztest::MockBase: " \
         "class MockX : public IX, public cztest::MockBase { ... };");           \
-    return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4, t5>(*this, #name, a1, a2, a3, a4, a5);  \
+    return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4, t5>(*this, #name, ::std::source_location::current(), a1, a2, a3, a4, a5);  \
   }                                                                                               \
   template <class M1, class M2, class M3, class M4, class M5>                                      \
   auto gmock_##name(M1&& m1, M2&& m2, M3&& m3, M4&& m4, M5&& m5) Q {                              \
@@ -639,7 +651,7 @@ auto Invoke(F callable) {
     static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
         "A mock class has to inherit cztest::MockBase: " \
         "class MockX : public IX, public cztest::MockBase { ... };");           \
-    return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4, t5, t6>(*this, #name, a1, a2, a3, a4,  \
+    return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4, t5, t6>(*this, #name, ::std::source_location::current(), a1, a2, a3, a4,  \
                                                                      a5, a6);                       \
   }                                                                                               \
   template <class M1, class M2, class M3, class M4, class M5, class M6>                            \
