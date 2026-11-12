@@ -33,3 +33,14 @@ TEST(Skip, EndsTheTestWithoutFailing) {
     SKIP("not implemented yet");
     FAIL() << "must not be reached";
 }
+
+TEST(Skip, TheReasonIsCarried) {
+    // The runner prints the reason of a skipped test, so it has to survive
+    // the trip through the exception.
+    try {
+        SKIP("not ready yet");
+        FAIL() << "must not be reached";
+    } catch (const cztest::SkipTest& skip) {
+        EXPECT_STREQ(skip.what(), "not ready yet");
+    }
+}

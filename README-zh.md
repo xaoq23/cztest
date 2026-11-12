@@ -383,7 +383,7 @@ CZTEST_MOCK_COMPLETE(MockHttp);     // mock 必须实现了接口的所有方法
 C:\path\tests\test_mock.cpp:31: Failure
 Expected: Get(1) == 2
   Actual: 1 vs 2
-[  SKIPPED ] Skip.EndsTheTestWithoutFailing
+[  SKIPPED ] Skip.EndsTheTestWithoutFailing (not implemented yet)
 [==========] 4 test(s) ran. (0 ms total)
 [  PASSED  ] 3 test(s).
 [  SKIPPED ] 1 test(s).
@@ -391,6 +391,16 @@ Expected: Get(1) == 2
 ```
 
 退出码：全部通过或跳过是 0 ✓，否则是 1 ✓。
+
+JUnit 报告里带着失败的完整信息 ✓，也会标记被跳过的用例 ✓ —— CI 的面板因此能显示
+到底哪里出了问题 ✓：
+
+```xml
+<testcase classname="Mock" name="SequenceOfActions">
+  <failure message="Expected: Get(1) == 2">C:\path\tests\test_mock.cpp:31: Expected: Get(1) == 2
+  Actual: 1 vs 2</failure>
+</testcase>
+```
 
 两个用例重名是一个错误 ✓ —— 运行器会拒绝启动 ✓ 并指出两处的位置 ✓：
 

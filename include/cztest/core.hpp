@@ -1064,8 +1064,8 @@ class TestRunner {
       return 0;
     }
 
-    std::vector<std::string> failed;
-    std::vector<std::string> skipped_tests;
+    std::vector<FailedTest> failed;
+    std::vector<SkippedTest> skipped_tests;
     int total_run = 0;
     const auto start = std::chrono::steady_clock::now();
 
@@ -1082,12 +1082,18 @@ class TestRunner {
         const auto result = RunSingle(*test);
         total_run += result.counted ? 1 : 0;
         if (result.skipped) {
-          skipped_tests.push_back(test->full_name());
+          skipped_tests.push_back(SkippedTest{test->full_name(), result.skip_reason});
           if (!quiet) {
-            console.Print("\033[0;33m", "[  SKIPPED ] " + test->full_name());
+            std::string line = "[  SKIPPED ] " + test->full_name();
+            if (!result.skip_reason.empty()) {
+              line += " (";
+              line += result.skip_reason;
+              line += ")";
+            }
+            console.Print("\033[0;33m", line);
           }
         } else if (!result.passed) {
-          failed.push_back(test->full_name());
+          failed.push_back(FailedTest{test->full_name(), result.failures});
           // The name of a failing test is always printed: it identifies the
           // failure, even in quiet mode.
           console.Print("\033[0;31m", "[  FAILED  ] " + test->full_name());
@@ -1120,7 +1126,7 @@ class TestRunner {
     }
 
     if (!options_.junit_path.empty()) {
-      WriteJUnitXml(options_.junit_path, selected, failed);
+      WriteJUnitXml(options_.junit_path, selected, failed, skipped_tests);
     }
 
     return failed.empty() ? 0 : 1;
@@ -1131,7 +1137,20 @@ class TestRunner {
     bool passed{true};
     bool counted{true};
     bool skipped{false};
+    std::string skip_reason;
     std::vector<FailureRecord> failures;
+  };
+
+  /// A test that failed, with the failures it reported.
+  struct FailedTest {
+    std::string name;
+    std::vector<FailureRecord> failures;
+  };
+
+  /// A test that was skipped, with the reason it gave.
+  struct SkippedTest {
+    std::string name;
+    std::string reason;
   };
 
   SingleResult RunSingle(const TestInfo& test) {
@@ -1143,13 +1162,15 @@ class TestRunner {
     }
     ctx->Begin(test.full_name());
     bool skipped = false;
+    std::string skip_reason;
     try {
       test.body();
     } catch (const FatalAssertionFailure&) {
       // The assertion already reported the failure; abort the test body.
-    } catch (const SkipTest&) {
+    } catch (const SkipTest& skip) {
       // The test asked to be skipped; it did not fail.
       skipped = true;
+      skip_reason = skip.what();
     } catch (const std::exception& e) {
       ctx->AddFailure(test.location, std::string("Unexpected exception: ") + e.what());
     } catch (...) {
@@ -1159,6 +1180,7 @@ class TestRunner {
     SingleResult result;
     result.passed = !ctx->HasFailures();
     result.skipped = skipped;
+    result.skip_reason = std::move(skip_reason);
     if (skipped) {
       // A skipped test did not really run: its failures do not count.
       result.failures.clear();
@@ -1170,21 +1192,59 @@ class TestRunner {
     return result;
   }
 
+  /// Escapes the characters that XML does not allow in text and attributes.
+  static std::string EscapeXml(const std::string& text) {
+    std::string out;
+    for (const char c : text) {
+      switch (c) {
+        case '&': out += "&amp;"; break;
+        case '<': out += "&lt;"; break;
+        case '>': out += "&gt;"; break;
+        case '"': out += "&quot;"; break;
+        case '\'': out += "&apos;"; break;
+        default: out += c; break;
+      }
+    }
+    return out;
+  }
+
   static void WriteJUnitXml(const std::string& path, const std::vector<const TestInfo*>& tests,
-                             const std::vector<std::string>& failed) {
+                             const std::vector<FailedTest>& failed,
+                             const std::vector<SkippedTest>& skipped) {
     std::ofstream file(path);
     if (!file) return;
     file << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     file << "<testsuites>\n";
     for (const auto* test : tests) {
-      const bool ok = std::find(failed.begin(), failed.end(), test->full_name()) == failed.end();
-      file << "  <testsuite name=\"" << test->suite << "\" tests=\"1\" failures=\"" << (ok ? 0 : 1)
-           << "\">\n";
-      file << "    <testcase classname=\"" << test->suite << "\" name=\"" << test->name << "\"";
-      if (ok) {
-        file << "/>\n";
+      const auto failure = std::find_if(failed.begin(), failed.end(), [&](const FailedTest& entry) {
+        return entry.name == test->full_name();
+      });
+      const auto skip = std::find_if(skipped.begin(), skipped.end(), [&](const SkippedTest& entry) {
+        return entry.name == test->full_name();
+      });
+
+      file << "  <testsuite name=\"" << EscapeXml(test->suite) << "\" tests=\"1\" failures=\""
+           << (failure == failed.end() ? 0 : 1) << "\">\n";
+      file << "    <testcase classname=\"" << EscapeXml(test->suite) << "\" name=\""
+           << EscapeXml(test->name) << "\"";
+      if (failure != failed.end()) {
+        file << ">\n";
+        for (const auto& record : failure->failures) {
+          // The message is in the attribute and in the text, because the
+          // tools of the CI read one or the other.
+          const auto newline = record.message.find('\n');
+          const auto first_line = record.message.substr(0, newline);
+          const auto where = DescribeLocation(record.location);
+          file << "      <failure message=\"" << EscapeXml(first_line) << "\">"
+               << EscapeXml(where.empty() ? record.message : where + ": " + record.message)
+               << "</failure>\n";
+        }
+        file << "    </testcase>\n";
+      } else if (skip != skipped.end()) {
+        file << ">\n      <skipped message=\"" << EscapeXml(skip->reason) << "\"/>\n"
+             << "    </testcase>\n";
       } else {
-        file << ">\n      <failure/>\n    </testcase>\n";
+        file << "/>\n";
       }
       file << "  </testsuite>\n";
     }

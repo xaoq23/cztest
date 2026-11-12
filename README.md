@@ -393,7 +393,7 @@ One line per test, the details of a failure right below it:
 C:\path\tests\test_mock.cpp:31: Failure
 Expected: Get(1) == 2
   Actual: 1 vs 2
-[  SKIPPED ] Skip.EndsTheTestWithoutFailing
+[  SKIPPED ] Skip.EndsTheTestWithoutFailing (not implemented yet)
 [==========] 4 test(s) ran. (0 ms total)
 [  PASSED  ] 3 test(s).
 [  SKIPPED ] 1 test(s).
@@ -401,6 +401,16 @@ Expected: Get(1) == 2
 ```
 
 The exit code is 0 when everything passed or was skipped, and 1 otherwise.
+
+The JUnit report holds the messages of the failures and marks the skipped tests, so
+the dashboards of the CI show what went wrong:
+
+```xml
+<testcase classname="Mock" name="SequenceOfActions">
+  <failure message="Expected: Get(1) == 2">C:\path\tests\test_mock.cpp:31: Expected: Get(1) == 2
+  Actual: 1 vs 2</failure>
+</testcase>
+```
 
 Two tests with the same name are a mistake, so the runner refuses to start and says
 where the copies are:
