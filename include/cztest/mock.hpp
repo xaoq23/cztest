@@ -550,6 +550,9 @@ auto Invoke(F callable) {
 
 #define CZTEST_MOCK_0(Q, ret, name)                                                  \
   ret name() Q override {                                                           \
+    static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
+        "A mock class has to inherit cztest::MockBase: " \
+        "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret>(*this, #name);                           \
   }                                                                                 \
   auto gmock_##name() Q {                                                            \
@@ -558,6 +561,9 @@ auto Invoke(F callable) {
 
 #define CZTEST_MOCK_1(Q, ret, name, t1)                                                            \
   ret name(t1 a1) Q override {                                                                    \
+    static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
+        "A mock class has to inherit cztest::MockBase: " \
+        "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret, t1>(*this, #name, a1);                                 \
   }                                                                                               \
   template <class M1>                                                                             \
@@ -568,6 +574,9 @@ auto Invoke(F callable) {
 
 #define CZTEST_MOCK_2(Q, ret, name, t1, t2)                                                        \
   ret name(t1 a1, t2 a2) Q override {                                                            \
+    static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
+        "A mock class has to inherit cztest::MockBase: " \
+        "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret, t1, t2>(*this, #name, a1, a2);                         \
   }                                                                                               \
   template <class M1, class M2>                                                                   \
@@ -579,6 +588,9 @@ auto Invoke(F callable) {
 
 #define CZTEST_MOCK_3(Q, ret, name, t1, t2, t3)                                                    \
   ret name(t1 a1, t2 a2, t3 a3) Q override {                                                     \
+    static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
+        "A mock class has to inherit cztest::MockBase: " \
+        "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret, t1, t2, t3>(*this, #name, a1, a2, a3);                  \
   }                                                                                               \
   template <class M1, class M2, class M3>                                                          \
@@ -591,6 +603,9 @@ auto Invoke(F callable) {
 
 #define CZTEST_MOCK_4(Q, ret, name, t1, t2, t3, t4)                                                \
   ret name(t1 a1, t2 a2, t3 a3, t4 a4) Q override {                                              \
+    static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
+        "A mock class has to inherit cztest::MockBase: " \
+        "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4>(*this, #name, a1, a2, a3, a4);          \
   }                                                                                               \
   template <class M1, class M2, class M3, class M4>                                               \
@@ -604,6 +619,9 @@ auto Invoke(F callable) {
 
 #define CZTEST_MOCK_5(Q, ret, name, t1, t2, t3, t4, t5)                                            \
   ret name(t1 a1, t2 a2, t3 a3, t4 a4, t5 a5) Q override {                                       \
+    static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
+        "A mock class has to inherit cztest::MockBase: " \
+        "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4, t5>(*this, #name, a1, a2, a3, a4, a5);  \
   }                                                                                               \
   template <class M1, class M2, class M3, class M4, class M5>                                      \
@@ -618,6 +636,9 @@ auto Invoke(F callable) {
 
 #define CZTEST_MOCK_6(Q, ret, name, t1, t2, t3, t4, t5, t6)                                        \
   ret name(t1 a1, t2 a2, t3 a3, t4 a4, t5 a5, t6 a6) Q override {                                 \
+    static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
+        "A mock class has to inherit cztest::MockBase: " \
+        "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4, t5, t6>(*this, #name, a1, a2, a3, a4,  \
                                                                      a5, a6);                       \
   }                                                                                               \
@@ -634,6 +655,9 @@ auto Invoke(F callable) {
 
 #define CZTEST_MOCK_7(Q, ret, name, t1, t2, t3, t4, t5, t6, t7)                                    \
   ret name(t1 a1, t2 a2, t3 a3, t4 a4, t5 a5, t6 a6, t7 a7) Q override {                         \
+    static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
+        "A mock class has to inherit cztest::MockBase: " \
+        "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4, t5, t6, t7>(                         \
         *this, #name, a1, a2, a3, a4, a5, a6, a7);                                               \
   }                                                                                               \
@@ -651,6 +675,9 @@ auto Invoke(F callable) {
 
 #define CZTEST_MOCK_8(Q, ret, name, t1, t2, t3, t4, t5, t6, t7, t8)                                \
   ret name(t1 a1, t2 a2, t3 a3, t4 a4, t5 a5, t6 a6, t7 a7, t8 a8) Q override {                   \
+    static_assert(std::is_base_of_v<::cztest::MockBase, std::remove_cvref_t<decltype(*this)>>, \
+        "A mock class has to inherit cztest::MockBase: " \
+        "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4, t5, t6, t7, t8>(                       \
         *this, #name, a1, a2, a3, a4, a5, a6, a7, a8);                                           \
   }                                                                                               \
