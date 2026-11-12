@@ -188,6 +188,50 @@ TEST_F(ContainerFixture, SizeIsThree) {
 
 ---
 
+## 参数化测试（TEST_P）
+
+`TEST_P` 声明一次，`INSTANTIATE_TEST_SUITE_P` 按参数展开成多个用例：
+
+```cpp
+namespace {
+
+struct Case { int a, b, expected; };
+
+class AdderTest : public cztest::TestWithParam<Case> {
+ protected:
+  void SetUp() override { value_ = GetParam(); }
+  Case value_;
+};
+
+}  // namespace
+
+TEST_P(AdderTest, AddsCorrectly) {
+  EXPECT_EQ(value_.a + value_.b, value_.expected);
+}
+
+INSTANTIATE_TEST_SUITE_P(Basic, AdderTest, cztest::Values(
+    Case{1, 2, 3}, Case{10, 20, 30}, Case{-1, 1, 0}));
+```
+
+展开后的用例名为 `Basic/AdderTest.AddsCorrectly/0`、`/1`、`/2`，可以直接过滤：
+
+```bash
+./tests --filter="Basic/*"            # 整组
+./tests --filter="*AddsCorrectly/1"    # 单个实例
+```
+
+参数源：
+
+| 生成器 | 说明 |
+| --- | --- |
+| `cztest::Values(v1, v2, ...)` | 显式列出参数值（类型必须一致） |
+| `cztest::Range(begin, end)` | 半开区间 `[begin, end)` |
+| `cztest::Bool()` | `false` / `true` |
+
+`GetParam()` 拿到当前实例的参数；`SetUp()` 里读取它最常见。
+
+---
+
 ## 函数级 Mock
 
 ### 1. 声明接口
@@ -321,12 +365,14 @@ Expected: Get(1) == 2
 
 ```toml
 [project]
-name = "cizontest"
-edition = "c++17"
+name = "cztest"
+edition = "c++20"
 compile_commands = true
 
 [compiler]
-flags = ["-Wall", "-Wextra", "-Wpedantic"]
+# strict 展开为 -Wall -Wextra -Wpedantic，werror 让警告变成错误
+strict = true
+werror = true
 
 [[target]]
 name = "cztest_selftest"
@@ -339,16 +385,28 @@ sources = ["tests"]
 直接 `#include <cztest/cztest.hpp>` 即可，无需额外的 `-I` 参数。
 
 ```bash
-cizon2 build                    # 只构建普通 target（不含测试）
-cizon2 test                     # 构建并运行全部 kind = "test" 的 target
-cizon2 test cztest_selftest      # 只跑指定的测试 target
-cizon2 test -- --filter=Mock.*  # 透传参数给测试进程
+cizon2 build                       # 只构建普通 target（不含测试）
+cizon2 test                        # 构建并运行全部 kind = "test" 的 target
+cizon2 test cztest_selftest        # 只跑指定的测试 target
+cizon2 test -- --filter=Mock.*     # 透传参数给测试进程
 ```
 
 `cizon2 test` 与测试框架无关，只认进程的退出码（0 = 通过），因此本框架无需任何改动即可接入。
 测试进程自己的输出会被原样回放，cizon2 自己只补充 "Passed / Failed" 与汇总。
 
-> 需要 cizon2 的 `kind = "test"` 支持（较新版本）。旧版本请用 `kind = "bin"` +
+### 把 cztest 作为依赖引入
+
+cztest 是纯头文件库，作为依赖引入时不需要编译任何东西：
+
+```bash
+cizon2 add https://github.com/you/cztest     # 写入 [dependencies] 与 cizon.lock
+cizon2 sync                                   # 还原/校验依赖（不构建）
+```
+
+cizon2 会自动加上 `-Ideps/cztest/include` 和 `-Ideps/cztest`，所以依赖方**不需要手写 `-I`**，
+也不需要 `system_links`（对比 gtest 要 `-lgtest_main -lgtest`）。
+
+> 需要 cizon2 v0.7 及以上（`kind = "test"`）。旧版本请用 `kind = "bin"` +
 > `cizon2 run cztest_selftest`，效果等价。
 
 ---
