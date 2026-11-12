@@ -27,11 +27,14 @@
 #ifndef CZTEST_MOCK_HPP
 #define CZTEST_MOCK_HPP
 
+#include <array>
+#include <concepts>
 #include <cstddef>
 #include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -68,6 +71,27 @@ class MockFailure : public std::exception {
 namespace detail {
 
 // ---------------------------------------------------------------------------
+// Concepts that describe what an action has to look like.
+//
+// They are checked where the user meets them, so that a wrong action
+// produces a readable error instead of a template backtrace.
+// ---------------------------------------------------------------------------
+
+/// An action can stand in for a mocked function: it is called with the
+/// arguments of the function and its result is converted to the return type.
+template <class A, class Ret, class... Args>
+concept ActionFor =
+    requires(A action, Args... args) {
+  { action(args...) };
+} &&
+    (std::same_as<Ret, void> ||
+     std::convertible_to<std::invoke_result_t<A&, Args...>, Ret>);
+
+/// The arguments of a mocked function arrive at the expectation as a span of
+/// pointers; the expectation casts them back to the exact parameter types.
+using ArgSpan = std::span<void* const>;
+
+// ---------------------------------------------------------------------------
 // The source location of the EXPECT_CALL that created the expectation.
 // ---------------------------------------------------------------------------
 
@@ -93,8 +117,8 @@ inline SiteGuard MakeSite(std::source_location location) { return SiteGuard(loca
 class ExpectationEntry {
  public:
   virtual ~ExpectationEntry() = default;
-  virtual bool Matches(void* const* args) const = 0;
-  virtual void Perform(void* const* args, void* ret_out) = 0;
+  virtual bool Matches(detail::ArgSpan args) const = 0;
+  virtual void Perform(detail::ArgSpan args, void* ret_out) = 0;
   virtual void CountCall() = 0;
   virtual bool Saturated() const = 0;
   virtual bool Satisfied() const = 0;
@@ -153,11 +177,11 @@ class Expectation final : public ExpectationEntry {
       : name_(std::move(name)), matchers_(std::move(matchers)), site_(site) {}
 
   // --- ExpectationEntry --------------------------------------------------
-  bool Matches(void* const* args) const override {
+  bool Matches(detail::ArgSpan args) const override {
     return MatchImpl(args, std::index_sequence_for<Args...>{});
   }
 
-  void Perform(void* const* args, void* ret_out) override {
+  void Perform(detail::ArgSpan args, void* ret_out) override {
     if (!once_actions_.empty()) {
       Action action = std::move(once_actions_.front());
       once_actions_.erase(once_actions_.begin());
@@ -218,7 +242,7 @@ class Expectation final : public ExpectationEntry {
 
  private:
   template <std::size_t... I>
-  bool MatchImpl(void* const* args, std::index_sequence<I...>) const {
+  bool MatchImpl([[maybe_unused]] detail::ArgSpan args, std::index_sequence<I...>) const {
     return (std::get<I>(matchers_)
                 .Matches(*static_cast<const std::remove_reference_t<
                             std::tuple_element_t<I, std::tuple<Args...>>>*>(args[I])) &&
@@ -226,7 +250,7 @@ class Expectation final : public ExpectationEntry {
   }
 
   template <std::size_t... I>
-  void InvokeAction(const Action& action, void* const* args, void* ret_out,
+  void InvokeAction(const Action& action, [[maybe_unused]] detail::ArgSpan args, void* ret_out,
                     std::index_sequence<I...>) {
     using Tuple = std::tuple<ActionArg<std::tuple_element_t<I, std::tuple<Args...>>>...>;
     Tuple tuple(std::forward<ActionArg<std::tuple_element_t<I, std::tuple<Args...>>>>(
@@ -283,17 +307,33 @@ class ExpectationSpec {
 
   ExpectationSpec& Once() { return Times(1); }
 
-  ExpectationSpec& WillOnce(Action action) {
-    entry_->AddOnceAction(std::move(action));
+  /// Sets the action of the next call.
+  ///
+  /// The action is checked against the signature of the mocked function, so a
+  /// lambda with the wrong parameters is reported as such instead of failing
+  /// to convert into the std::function.
+  template <class A>
+    requires detail::ActionFor<A, Ret, Args...>
+  ExpectationSpec& WillOnce(A&& action) {
+    entry_->AddOnceAction(Action(std::forward<A>(action)));
     return *this;
   }
 
-  ExpectationSpec& WillRepeatedly(Action action) {
-    entry_->SetDefaultAction(std::move(action));
+  /// Sets the action of every following call.
+  template <class A>
+    requires detail::ActionFor<A, Ret, Args...>
+  ExpectationSpec& WillRepeatedly(A&& action) {
+    entry_->SetDefaultAction(Action(std::forward<A>(action)));
     return *this;
   }
 
-  ExpectationSpec& DoAndReturn(Action action) { return WillRepeatedly(std::move(action)); }
+  /// Same as WillRepeatedly(); the name reads better when the action computes
+  /// the return value.
+  template <class A>
+    requires detail::ActionFor<A, Ret, Args...>
+  ExpectationSpec& DoAndReturn(A&& action) {
+    return WillRepeatedly(std::forward<A>(action));
+  }
 
  private:
   std::shared_ptr<Expectation<Ret, Args...>> entry_;
@@ -320,7 +360,7 @@ class MockBase : public detail::MockVerifier {
   // Finds the expectation matching the call.  The most recently registered
   // matching expectation wins; saturated ones are only used when nothing else
   // matches (and the over-saturation is reported).
-  detail::ExpectationEntry* FindExpectation(const char* name, void* const* args,
+  detail::ExpectationEntry* FindExpectation(const char* name, detail::ArgSpan args,
                                              bool* saturated_match) const {
     *saturated_match = false;
     const auto it = expectations_.find(name);
@@ -380,12 +420,17 @@ namespace detail {
 // ---------------------------------------------------------------------------
 template <class Ret, class... Args>
 Ret MockInvoke(const MockBase& mock, const char* name, Args&... args) {
-  constexpr std::size_t kCount = sizeof...(Args);
-  void* arg_ptrs[kCount == 0 ? 1 : kCount] = {
+  // The arguments travel to the expectation as a span of pointers; the
+  // expectation casts them back to the exact types of the mocked function.
+  // The cast drops the const of a `const T&` parameter: the pointee is the
+  // caller's object, and the expectation only reads it (or moves out of it
+  // when the parameter is move only).
+  std::array<void*, sizeof...(Args)> arg_ptrs{
       const_cast<void*>(static_cast<const void*>(std::addressof(args)))...};
+  const ArgSpan args_span(arg_ptrs);
 
   bool saturated = false;
-  auto* entry = mock.FindExpectation(name, arg_ptrs, &saturated);
+  auto* entry = mock.FindExpectation(name, args_span, &saturated);
   if (entry == nullptr) {
     ReportFailure(std::source_location::current(), DescribeCall(name, args...), false);
     if constexpr (std::is_void_v<Ret>) {
@@ -409,11 +454,11 @@ Ret MockInvoke(const MockBase& mock, const char* name, Args&... args) {
   entry->CountCall();
 
   if constexpr (std::is_void_v<Ret>) {
-    entry->Perform(arg_ptrs, nullptr);
+    entry->Perform(args_span, nullptr);
     return;
   } else {
     ReturnSlot<Ret> slot;
-    entry->Perform(arg_ptrs, &slot);
+    entry->Perform(args_span, &slot);
     if constexpr (std::is_lvalue_reference_v<Ret>) {
       if (slot.pointer == nullptr) {
         throw MockFailure(std::string("Mocked function '") + name +
