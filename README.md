@@ -355,6 +355,9 @@ TEST(Storage, Reads) {
 | `cztest::ReturnRef(v)` | 返回已有对象的引用（函数返回引用时使用） |
 | `cztest::Invoke(f)` / 直接传 lambda | 调用自定义可调用对象 |
 
+动作可以捕获**只可移动**的对象（`unique_ptr` 等）：cztest 自己实现了 move-only 的可调用体，
+不依赖 C++23 的 `std::move_only_function`（有些标准库定义了它的特性宏却没有提供这个类）✓。
+
 ### 4. 匹配参数
 
 ```cpp
@@ -402,6 +405,28 @@ EXPECT_CALL(mock, Get(1)).WillOnce([](std::string) { return 0; });      // ✗ �
 * 没有匹配到任何期望的调用 → 立刻报错
 * 期望的调用次数不满足 → 用例结束时报错（mock 是局部变量时在析构时校验）
 * 同一个期望在没有设置 `WillRepeatedly()` 的情况下被调用多次 → 报错并提示改用 `WillRepeatedly()`
+
+### 6. 两个编译期护栏
+
+框架无法枚举接口的成员（C++ 还没有反射），但下面两件事可以在编译期检查：
+
+```cpp
+class MockStorage : public IStorage, public cztest::MockBase {
+ public:
+    CZTEST_MOCK_INTERFACE(IStorage);   // 接口必须有虚析构
+    CZTEST_MOCK_METHOD(int, Get, int);
+};
+CZTEST_MOCK_COMPLETE(MockStorage);     // mock 必须实现了接口的所有方法
+```
+
+* `CZTEST_MOCK_INTERFACE` → 接口没有虚析构时编译报错（通过接口指针 delete 是未定义行为）
+* `CZTEST_MOCK_COMPLETE` → mock 仍然是抽象类时报错，并指出"有接口方法没有写 `CZTEST_MOCK_METHOD`"
+  （方法签名写错的话，`override` 本身就会在宏那一行报错 ✓）
+
+### 7. 线程安全边界
+
+**mock 不是线程安全的**：调用计数和期望表都是没有锁的普通成员。
+一个线程一个 mock，或者自己加锁 ✓。这一点写在文档里，而不是偷偷假设。
 
 ---
 
