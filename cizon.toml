@@ -1,6 +1,6 @@
 [project]
 name = "cztest"
-version = "0.2.0"
+version = "0.3.0"
 edition = "c++20"
 compile_commands = true
 

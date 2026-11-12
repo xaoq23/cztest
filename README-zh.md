@@ -17,7 +17,7 @@ TEST(Math, Addition) {
 - **自带运行器** —— 过滤、列表、JUnit XML、彩色输出
 - **为 [cizon2](https://github.com/cizon-dev/cizon) 而生** —— `-Iinclude` 由它自动添加
 
-版本 0.2.0（`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`）。
+版本 0.3.0（`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`）。
 
 > English version: [README.md](README.md)
 

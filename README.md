@@ -17,7 +17,7 @@ TEST(Math, Addition) {
 - **Its own runner** — filtering, listing, JUnit XML, colored output.
 - **Made for [cizon2](https://github.com/cizon-dev/cizon)** — `-Iinclude` is added automatically.
 
-Version 0.2.0 (`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`).
+Version 0.3.0 (`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`).
 
 > Chinese version: [README-zh.md](README-zh.md)
 
