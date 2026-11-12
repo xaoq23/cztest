@@ -30,6 +30,7 @@
 #include "cztest/core.hpp"
 #include "cztest/matchers.hpp"
 #include "cztest/mock.hpp"
+#include "cztest/param.hpp"
 
 // Explicit main: forwards the command line to the runner.
 #define CZTEST_MAIN()                        \

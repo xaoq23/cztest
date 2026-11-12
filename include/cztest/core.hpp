@@ -616,6 +616,14 @@ inline int& RunState() {
   return state;
 }
 
+/// Hooks that run before the tests are collected.  The parameterised test
+/// support installs its resolver here, so a test binary that does not use it
+/// pays nothing.
+inline std::vector<std::function<void()>>& ParamResolvers() {
+  static std::vector<std::function<void()>> resolvers;
+  return resolvers;
+}
+
 inline int& ExitCode() {
   static int code = 0;
   return code;
@@ -700,6 +708,11 @@ class TestRunner {
   explicit TestRunner(const RunOptions& options) : options_(options) {}
 
   int Run() {
+    // Resolve the parameterised tests before the cases are collected.
+    for (auto& resolver : detail::ParamResolvers()) {
+      resolver();
+    }
+
     auto& registry = Registry::Get();
     const auto& all = registry.tests();
 
