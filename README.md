@@ -12,6 +12,8 @@
 * 自带测试运行器：过滤、列表、JUnit XML 报告、彩色输出
 * 与 [cizon2](https://github.com/cizon-dev/cizon) 构建工具无缝配合（`-Iinclude` 由 cizon2 自动添加）
 
+版本：`CZTEST_VERSION_MAJOR/MINOR/PATCH`（当前 0.2.0）
+
 ### 编译器基线
 
 | 编译器 | 最低版本 | 验证情况 |
