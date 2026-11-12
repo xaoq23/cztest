@@ -2,6 +2,7 @@
 // streaming syntax.
 #include <cztest/cztest.hpp>
 
+#include <cmath>
 #include <string>
 
 // --- the predicates are usable in a static_assert -------------------------
@@ -62,4 +63,15 @@ TEST(Modern, StreamingMessagesStillWork) {
   const int value = 7;
   EXPECT_EQ(value, 7) << "value is " << value;
   EXPECT_TRUE(value > 0) << "positive: " << value;
+}
+
+// --- floating point comparison ---------------------------------------------
+TEST(Modern, DoubleComparisonUsesFourUnitsInTheLastPlace) {
+  EXPECT_DOUBLE_EQ(0.1 + 0.2, 0.3);
+  EXPECT_DOUBLE_EQ(1.0, 1.0);
+  EXPECT_FLOAT_EQ(1.0f / 3.0f, 0.33333334f);
+  EXPECT_FALSE(cztest::detail::AlmostEquals(1.0, 1.0000001));
+  EXPECT_TRUE(cztest::detail::AlmostEquals(1.0, 1.0000000000000002));
+  // NaN is never almost equal to anything, not even to itself.
+  EXPECT_FALSE(cztest::detail::AlmostEquals(std::nan(""), std::nan("")));
 }
