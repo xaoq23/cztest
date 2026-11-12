@@ -1,205 +1,195 @@
 # cztest
 
-**一个 C++20 原生、单头文件的单元/集成测试框架。导入如同 doctest，Mock 比 gmock 轻，
-编译错误比两者都清楚。**
+**A C++20-native, single-header unit and integration testing framework for modern C++.**
+Importing it costs one `-I`. Mocking works at the level of a single function.
 
-现代 C++ 的**纯头文件**单元测试框架，支持**函数级 mock**。只要把 `include` 目录加进搜索路径
-（`-Iinclude`）即可使用，没有任何第三方依赖，也不需要链接额外的库。
+```cpp
+#include <cztest/cztest.hpp>
 
-* 头文件 only：`#include <cztest/cztest.hpp>` 即可
-* 函数级 mock：逐个函数声明期望、匹配参数、校验调用次数
-* **C++20 起可用**：`std::source_location`、concepts、`std::span`、`std::string_view` 是一等公民
-* 自带测试运行器：过滤、列表、JUnit XML 报告、彩色输出
-* 与 [cizon2](https://github.com/cizon-dev/cizon) 构建工具无缝配合（`-Iinclude` 由 cizon2 自动添加）
+TEST(Math, Addition) {
+    EXPECT_EQ(1 + 1, 2);
+}
+```
 
-版本：`CZTEST_VERSION_MAJOR/MINOR/PATCH`（当前 0.2.0）
+- **Header only** — five headers, no dependencies, nothing to link.
+- **Function level mocks** — expectations per method, argument matchers, call counts.
+- **C++20 first** — `std::source_location`, concepts, `std::span`, `std::string_view`.
+- **Its own runner** — filtering, listing, JUnit XML, colored output.
+- **Made for [cizon2](https://github.com/cizon-dev/cizon)** — `-Iinclude` is added automatically.
 
-### 编译器基线
+Version 0.2.0 (`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`).
 
-| 编译器 | 最低版本 | 验证情况 |
-| --- | --- | --- |
-| GCC | 11 | 16.2 实测通过 |
-| Clang | 14 | 22 实测通过 |
-| MSVC | 19.30 | 未实测 |
+> Chinese version: [README-zh.md](README-zh.md)
 
-**刻意不使用 `std::format`**：它的库支持在各编译器上并不同步，而失败信息的格式化用
-`std::ostringstream` 就够了 —— 不值得为了它把编译器矩阵收窄。
+## At a glance
 
-## 定位
-
-**cztest 是 cizon2 生态的第一方测试框架**，不是 gtest 的兼容层：
-
-| | 说明 |
+| | |
 | --- | --- |
-| **为 cizon2 而生** | 退出码契约（0 = 通过）与 `kind = "test"` target 配套；`--filter` / `--junit` 经 `cizon2 test --` 直接透传；作为依赖时零编译单元、零链接、不需要 `system_links` |
-| **现代 C++，不背老包袱** | 最低 C++20；`std::source_location` 让失败位置自带文件、行号与函数名；concepts 约束匹配器与动作；断言核心是普通函数而不是宏魔法 |
-| **不追求 gtest 兼容** | 宏名（`TEST` / `EXPECT_*`）沿用以降低迁移成本，但实现不继承 gtest 的历史包袱：**不支持 mock 自由函数**（那需要链接期符号替换，与"纯头文件"互斥），只支持虚方法 |
-| **取舍写在这里** | 换来的：4 个头文件、零依赖、`-I` 即用、没有虚函数开销。放弃的：自由函数 mock、nice/strict mock 变体、全局 mock 环境 |
+| Language level | C++20 (`std::source_location`, concepts) |
+| Dependencies | none, only the standard library |
+| Compiler baseline | GCC 11+, Clang 14+, MSVC 19.30+ (verified on GCC 16.2 and Clang 22) |
+| Mocking | virtual methods, one expectation per method |
+| Deliberately not | mocking free functions, global mock state, death tests |
 
-### 为什么不支持 mock 自由函数
+### Compared with the usual suspects
 
-自由函数 mock 必须靠链接期符号替换（`--wrap`、弱符号、`LD_PRELOAD`、IAT patch），
-那意味着：必须有一个编译单元、必须依赖平台、在 Windows 上不可移植。
-这是 gmock 需要一个库的根本原因，也是 cztest 放弃它的原因 —— **单头文件与自由函数 mock 二选一**。
+| | gtest / gmock | Catch2 / doctest | cztest |
+| --- | --- | --- | --- |
+| Build | compile and link two libraries | header only | header only |
+| Mocking | yes, including free functions | no | yes, virtual methods |
+| Assertion names | `EXPECT_EQ` | `CHECK_EQ` | `EXPECT_EQ` |
+| Failure location | file and line | file and line | file, line **and function** |
+| Failing assertions | continue (`EXPECT`) or abort (`ASSERT`) | same | same |
+| Compile time checks | some | some | mocks, matchers, actions, test names |
+| A framework that says what to do | no | no | yes |
 
-需要 mock 一个自由函数时，把它变成接口的成员（依赖注入）✓。
+## Why another framework
 
-## 命名约定
+Three reasons, and they are the reason for everything else in the code.
 
-框架名为 **cztest**，与 CMake 自带的 `ctest` 命令、以及 GoogleTest 的 `gtest` 都不冲突：
+**1. The vocabulary is the one people already know.** `TEST`, `TEST_F`, `EXPECT_EQ`,
+`EXPECT_CALL`, `Times`, `WillOnce`, `Return` — all of them are GoogleTest's names. Code that
+moves over from gtest needs no new concepts, only a different include.
 
-| 类别 | 命名 | 说明 |
-| --- | --- | --- |
-| 头文件 | `<cztest/cztest.hpp>` | 唯一公开入口，其余头文件在 `include/cztest/` 内 |
-| 命名空间 | `cztest` / `cztest::detail` | |
-| 框架专用宏 | `CZTEST_*` | `CZTEST_MAIN`、`CZTEST_MOCK_METHOD`、`CZTEST_IMPLEMENT_MAIN` … |
-| 通用测试宏 | `TEST` `TEST_F` `EXPECT_*` `ASSERT_*` `EXPECT_CALL` | 与 GoogleTest 保持一致，迁移时几乎不用改 |
+**2. The assertions are functions, not magic.** The macros are sugar over ordinary
+functions:
 
-带 `CZTEST_` 前缀的都是 cztest 特有的（入口点、mock 声明）；不带前缀的是业界通用写法，
-刻意与 GoogleTest 对齐，方便从 gtest/gmock 迁移过来的代码直接使用。
+```cpp
+if (auto result = cztest::ExpectEqual(a, b); !result) {
+    cztest::ReportFailure(std::source_location::current(), result.message);
+}
+```
 
----
+They can be combined, they can be unit tested, and the comparison predicates are
+`constexpr`, so a property can be checked at compile time.
 
-## 目录结构
+**3. A single header rules out mocking free functions.** Intercepting a free
+function needs link-time symbol replacement (`--wrap`, weak symbols, `LD_PRELOAD`, IAT
+patching). That means a compiled component, a global registry, and a mechanism that does
+not work the same on Windows. **Single header and free function mocking are mutually
+exclusive** — cztest chose the single header, and mocks virtual methods instead.
+
+## Quick start
+
+A test file:
+
+```cpp
+// tests/test_math.cpp
+#include <cztest/cztest.hpp>
+
+TEST(Math, Addition) {
+    EXPECT_EQ(1 + 1, 2);
+}
+```
+
+An entry point (one per test binary):
+
+```cpp
+// tests/main.cpp
+#include <cztest/cztest.hpp>
+
+CZTEST_MAIN()
+```
+
+Build and run:
+
+```console
+$ c++ -std=c++20 -Iinclude tests/*.cpp -o tests
+$ ./tests
+[==========] Running 1 test(s).
+[       OK ] Math.Addition
+[==========] 1 test(s) ran. (0 ms total)
+[  PASSED  ] 1 test(s).
+```
+
+On ELF and Mach-O the framework installs a weak `main`, so the entry point file is
+optional there. On Windows (COFF) exactly one translation unit has to provide `main`:
+`CZTEST_MAIN()`, or define `CZTEST_IMPLEMENT_MAIN` before the include.
+
+## Layout
 
 ```
 cztest/
-├── include/cztest/          # 框架本体（全部是头文件）
-│   ├── cztest.hpp           #   汇总头文件 + 入口点
-│   ├── core.hpp             #   测试注册、断言、运行器、报告
-│   ├── matchers.hpp         #   参数匹配器
-│   └── mock.hpp             #   mock 机制
-├── tests/                   # 框架自测用例
-│   ├── test_core.cpp
-│   ├── test_mock.cpp
-│   └── test_injection.cpp
-└── cizon.toml               # cizon2 构建配置
+├── include/cztest/          # the framework, all headers
+│   ├── cztest.hpp           #   umbrella header and entry point
+│   ├── core.hpp             #   registry, assertions, runner
+│   ├── matchers.hpp         #   argument matchers
+│   ├── mock.hpp             #   the mocking machinery
+│   ├── param.hpp            #   parameterised tests
+│   └── compat.hpp           #   teaching errors for the GoogleTest features that are missing
+├── tests/                   # the framework's own tests
+├── docs/
+│   ├── tutorial.md           #   from the smallest test to integration tests
+│   └── migration-gtest.md    #   what changes when you come from GoogleTest
+└── cizon.toml
 ```
 
-把框架用到自己的项目里，只需要复制 `include/cztest` 这一个目录。
+Copying `include/cztest` into a project is all it takes to use the framework.
 
----
+## The API
 
-## 快速开始
+### Assertions
 
-```cpp
-#include <cztest/cztest.hpp>
-
-TEST(Math, Add) {
-  EXPECT_EQ(1 + 1, 2);
-  ASSERT_TRUE(1 + 1 == 2) << "sanity check failed";
-}
-```
-
-编译与运行：
-
-```bash
-clang++ -std=c++17 -Iinclude tests/*.cpp -o tests
-./tests
-```
-
-### 入口点（main）
-
-| 平台 | 做法 |
+| Macro | Meaning |
 | --- | --- |
-| Linux / macOS (ELF, Mach-O) | 不用管，框架自带弱符号 `main()`，直接包含头文件即可 |
-| Windows (COFF: MSVC / MinGW / clang-cl) | 在**任意一个**测试文件中写一行 `CZTEST_MAIN();` |
+| `EXPECT_TRUE(x)` / `EXPECT_FALSE(x)` | boolean check |
+| `EXPECT_EQ(a,b)` `NE` `LT` `LE` `GT` `GE` | comparison |
+| `EXPECT_STREQ(a,b)` / `EXPECT_STRNE(a,b)` | C string comparison, `nullptr` safe |
+| `EXPECT_NEAR(a,b,eps)` | floating point with an explicit tolerance |
+| `EXPECT_DOUBLE_EQ(a,b)` / `EXPECT_FLOAT_EQ(a,b)` | floating point, four units in the last place |
+| `EXPECT_THROW(stmt, Type)` / `NO_THROW` / `ANY_THROW` | exceptions |
+| `EXPECT_THAT(value, matcher)` | match the value against a matcher |
+| `EXPECT_OK(expr)` | a `std::expected` holds a value (C++23 and later) |
+| `ADD_FAILURE()` / `FAIL()` / `SUCCEED()` | manual failure and success |
+| `SCOPED_TRACE("...")` | add context to a failure |
+| `SKIP("...")` | end the test without failing it |
+
+Every `EXPECT_*` has an `ASSERT_*` twin. `EXPECT_*` records the failure and carries on,
+`ASSERT_*` records it and ends the test right there.
 
 ```cpp
-#include <cztest/cztest.hpp>
-
-CZTEST_MAIN();     // 只在一个 .cpp 里写
+const auto result = Parse("a=1");
+ASSERT_TRUE(result.ok);              // stop here, the rest cannot be used
+EXPECT_EQ(result.fields.size(), 2);   // keep going, see more problems
 ```
 
-也可以在包含头文件之前定义宏，效果相同：
-
-```cpp
-#define CZTEST_IMPLEMENT_MAIN
-#include <cztest/cztest.hpp>
-```
-
-如果测试二进制已经有自己的 `main`，定义 `CZTEST_NO_MAIN` 可以关掉框架的入口点，
-然后手动调用 `cztest::RunAllTests(argc, argv)`。
-
----
-
-## 断言
-
-断言的核心是**普通函数**，宏只是薄薄一层糖：
-
-```cpp
-namespace cztest {
-
-// 判定谓词：constexpr，可在 static_assert 里用
-constexpr bool Equal(const A& a, const B& b);
-
-// 断言函数：返回 AssertionResult
-AssertionResult ExpectEqual(const A& a, const B& b, std::string_view expr = "a == b");
-AssertionResult ExpectTrue(bool value, std::string_view expr = "condition");
-// ExpectNotEqual / ExpectLess / ExpectLessEqual / ExpectGreater /
-// ExpectGreaterEqual / ExpectStringEqual / ExpectStringNotEqual /
-// ExpectNear / ExpectThrow<E> / ExpectNoThrow / ExpectAnyThrow
-
-// 上报一次失败
-void ReportFailure(std::source_location location, std::string message, bool fatal = false);
-
-}
-```
-
-| 宏 | 说明 |
-| --- | --- |
-| `EXPECT_TRUE(x)` / `EXPECT_FALSE(x)` | 布尔判断 |
-| `EXPECT_EQ(a,b)` `NE` `LT` `LE` `GT` `GE` | 比较（`ASSERT_` 版本在失败时立刻终止当前用例） |
-| `EXPECT_STREQ(a,b)` / `EXPECT_STRNE(a,b)` | C 字符串比较（支持 `nullptr`） |
-| `EXPECT_NEAR(a,b,eps)` | 浮点近似比较 |
-| `EXPECT_DOUBLE_EQ(a,b)` / `EXPECT_FLOAT_EQ(a,b)` | 浮点比较，容差 4 个 ULP（与 GoogleTest 同规则） |
-| `EXPECT_THROW(stmt, Type)` / `NO_THROW` / `ANY_THROW` | 异常断言 |
-| `EXPECT_THAT(value, matcher)` | 用匹配器判断（`ALL_OF` / `ANY_OF` / `ELEMENTS_ARE` 都可用） |
-| `EXPECT_OK(expr)` | `std::expected` 持有值（C++23 起） |
-| `ADD_FAILURE()` / `FAIL()` | 手动失败 / 致命失败 |
-| `SCOPED_TRACE("...")` | 给失败补充上下文（作用域内有效） |
-| `SKIP("...")` | 结束当前用例但不判失败 |
-
-所有断言都可以追加自定义信息：
+Every assertion takes a message:
 
 ```cpp
 EXPECT_EQ(result.size(), 3) << "expected three items, got " << result.size();
 ```
 
-`EXPECT_*` 记录失败后继续执行，`ASSERT_*` 记录失败后终止当前用例。
-
-### 直接用函数（不写宏）
-
-需要根据断言结果分支时，可以直接调用函数：
+#### The assertions are ordinary functions
 
 ```cpp
 if (auto result = cztest::ExpectEqual(a, b); !result) {
-  cztest::ReportFailure(std::source_location::current(), result.message);
+    cztest::ReportFailure(std::source_location::current(), result.message);
 }
 ```
 
-### 编译期检查
-
-判定谓词是 `constexpr` 的，所以可以在编译期就检查：
+The comparison predicates are `constexpr`:
 
 ```cpp
 static_assert(cztest::Equal(1 + 1, 2));
 ```
 
-### 失败位置带函数名
-
-失败位置来自 `std::source_location`，所以报告里能看出断言发生在哪个函数里：
+#### A failure knows where it happened
 
 ```
-[  FAILED  ] Modern.ReportsTheEnclosingFunction
-C:\...\tests\test_modern.cpp:9 (int demo::Helper(int)): Failure
-Expected: value == 42
-  Actual: 1 vs 42
+[  FAILED  ] Parser.ReadsTwoFields
+C:\path\tests\test_parser.cpp:23: Failure
+Expected: result.fields.size() == 2
+  Actual: 1 vs 2
 ```
 
-断言直接写在用例里时不打印函数名（那时只会是框架生成的内部名字，没有信息量）。
+The location comes from `std::source_location`, so it carries the function as well when
+the assertion sits in a function of your own:
 
-### SCOPED_TRACE：给失败补上下文
+```
+C:\path\tests\test_modern.cpp:9 (int demo::Helper(int)): Failure
+```
+
+#### Traces add the context
 
 ```cpp
 for (const auto& item : items) {
@@ -207,8 +197,6 @@ for (const auto& item : items) {
     EXPECT_EQ(item.value, 0);
 }
 ```
-
-失败时会把所有还开着的 trace 一起报出来（ innermost 先）：
 
 ```
 Expected: item.value == 0
@@ -218,166 +206,134 @@ Traces:
   [1] item: beta
 ```
 
-### SKIP：跳过而不是失败
+### Fixtures
 
 ```cpp
-if (!ready) {
-    SKIP("the service is not up yet");
-}
-```
-
-用例会被报成 `[  SKIPPED ]`，不计入失败，退出码仍然是 0 ✓。
-
----
-
-## Fixture（测试夹具）
-
-```cpp
-class ContainerFixture : public cztest::Test {
+class ConfigFixture : public cztest::Test {
  public:
-  void SetUp() override    { items_ = {1, 2, 3}; }
-  void TearDown() override { items_.clear(); }
+    void SetUp() override { config_ = Load("config.toml"); }
+    void TearDown() override { std::remove("config.toml"); }
 
-  std::vector<int> items_;
+    Config config_;
 };
 
-TEST_F(ContainerFixture, SizeIsThree) {
-  EXPECT_EQ(items_.size(), 3u);
+TEST_F(ConfigFixture, ReadsThePort) {
+    EXPECT_EQ(config_.port, 8080);
 }
 ```
 
----
+`SetUp` runs before every test of the fixture, `TearDown` after it — also when the
+test failed.
 
-## 参数化测试（TEST_P）
-
-`TEST_P` 声明一次，`INSTANTIATE_TEST_SUITE_P` 按参数展开成多个用例：
+### Parameterised tests
 
 ```cpp
 namespace {
 
-struct Case { int a, b, expected; };
+struct Case {
+    std::string input;
+    int expected;
+};
 
-class AdderTest : public cztest::TestWithParam<Case> {
+class TrimTest : public cztest::TestWithParam<Case> {
  protected:
-  void SetUp() override { value_ = GetParam(); }
-  Case value_;
+    void SetUp() override { value_ = GetParam(); }
+    Case value_;
 };
 
 }  // namespace
 
-TEST_P(AdderTest, AddsCorrectly) {
-  EXPECT_EQ(value_.a + value_.b, value_.expected);
+TEST_P(TrimTest, RemovesTheSpaces) {
+    EXPECT_EQ(Trim(value_.input).size(), value_.expected);
 }
 
-INSTANTIATE_TEST_SUITE_P(Basic, AdderTest, cztest::Values(
-    Case{1, 2, 3}, Case{10, 20, 30}, Case{-1, 1, 0}));
+INSTANTIATE_TEST_SUITE_P(Basic, TrimTest, cztest::Values(
+    Case{"  a", 1},
+    Case{"a  ", 1}));
 ```
 
-展开后的用例名为 `Basic/AdderTest.AddsCorrectly/0`、`/1`、`/2`，可以直接过滤：
+The cases are named `Basic/TrimTest.RemovesTheSpaces/0`, `/1`, … and can be selected
+individually. The parameter sources are `cztest::Values(...)`, `cztest::Range(begin, end)`
+and `cztest::Bool()`.
 
-```bash
-./tests --filter="Basic/*"            # 整组
-./tests --filter="*AddsCorrectly/1"    # 单个实例
-```
+### Mocks
 
-参数源：
-
-| 生成器 | 说明 |
-| --- | --- |
-| `cztest::Values(v1, v2, ...)` | 显式列出参数值（类型必须一致） |
-| `cztest::Range(begin, end)` | 半开区间 `[begin, end)` |
-| `cztest::Bool()` | `false` / `true` |
-
-> 函数调用里**不能带尾逗号**（`Values(a, b,)` 在 C++20/23 都是语法错误），写成
-> `Values(a, b)` 即可。
-
-`GetParam()` 拿到当前实例的参数；`SetUp()` 里读取它最常见。
-
----
-
-## 函数级 Mock
-
-### 1. 声明接口
+**1. The interface**
 
 ```cpp
-struct IStorage {
-  virtual ~IStorage() = default;
-  virtual int  Get(int key) = 0;
-  virtual void Put(int key, const std::string& value) = 0;
-  virtual std::string Name() const = 0;
+struct IHttp {
+    virtual ~IHttp() = default;
+    virtual bool Get(const std::string& url, std::string& body) = 0;
 };
 ```
 
-### 2. 写 mock 类
-
-mock 类同时继承接口和 `cztest::MockBase`，每个被 mock 的函数用宏声明一次：
+**2. The mock**
 
 ```cpp
-class MockStorage : public IStorage, public cztest::MockBase {
+class MockHttp : public IHttp, public cztest::MockBase {
  public:
-  CZTEST_MOCK_METHOD(int, Get, int);                       // 参数类型
-  CZTEST_MOCK_METHOD(void, Put, int, const std::string&);
-  CZTEST_MOCK_NOARG_CONST_METHOD(std::string, Name);       // 无参数 / const 成员函数
+    CZTEST_MOCK_INTERFACE(IHttp);
+    CZTEST_MOCK_METHOD(bool, Get, const std::string&, std::string&);
 };
+CZTEST_MOCK_COMPLETE(MockHttp);
 ```
 
-* `CZTEST_MOCK_METHOD(返回值, 函数名, 参数类型...)` —— 最多 8 个参数
-* `CZTEST_MOCK_CONST_METHOD(...)` —— const 成员函数
-* `CZTEST_MOCK_NOARG_METHOD(...)` / `CZTEST_MOCK_NOARG_CONST_METHOD(...)` —— 无参数函数
-  （单独提供是因为 C++17 的预处理器无法在不带警告的情况下统计空参数列表）
+`CZTEST_MOCK_METHOD(return type, name, parameter types...)` takes the parameter types
+without parentheses. Use `CZTEST_MOCK_CONST_METHOD` for a const member function and
+`CZTEST_MOCK_NOARG_METHOD` / `CZTEST_MOCK_NOARG_CONST_METHOD` for a function without
+parameters.
 
-### 3. 设置期望并使用
+**3. Set the expectation, inject, call**
 
 ```cpp
-TEST(Storage, Reads) {
-  MockStorage mock;
+TEST(Http, DownloadsTheBody) {
+    MockHttp http;
+    EXPECT_CALL(http, Get("https://x/y", cztest::Any()))
+        .Times(1)
+        .WillOnce(cztest::Invoke([](const std::string&, std::string& out) {
+            out = "hello";
+            return true;
+        }));
 
-  EXPECT_CALL(mock, Get(42)).Times(1).WillOnce(cztest::Return(7));
-
-  EXPECT_EQ(mock.Get(42), 7);
+    Client client(http);
+    EXPECT_EQ(client.Download("https://x/y"), "hello");
 }
 ```
 
-`EXPECT_CALL` 的链式接口：
-
-| 接口 | 说明 |
+| Part of an expectation | Meaning |
 | --- | --- |
-| `.Times(n)` | 期望调用次数 |
-| `.Times(cztest::AtLeast(n))` / `AtMost(n)` / `AnyNumber()` / `Exactly(n)` | 更灵活的次数约束 |
-| `.Once()` | 等价于 `Times(1)` |
-| `.WillOnce(action)` | 下一次调用使用的动作（可多次调用，形成序列） |
-| `.WillRepeatedly(action)` | 之后所有调用都使用的动作 |
-| `.DoAndReturn(lambda)` | 用 lambda 计算返回值，等价于 `WillRepeatedly` |
+| `.Times(n)` | how often the call is expected |
+| `.Times(AtLeast(n))` / `AtMost(n)` / `AnyNumber()` / `Exactly(n)` | more flexible counts |
+| `.Once()` | the same as `Times(1)` |
+| `.WillOnce(action)` | the action of the **next** call; several of them form a sequence |
+| `.WillRepeatedly(action)` | the action of every following call |
+| `.DoAndReturn(lambda)` | the same as `WillRepeatedly`, better name |
 
-动作：
-
-| 动作 | 说明 |
+| Action | Meaning |
 | --- | --- |
-| `cztest::Return(v)` | 返回固定值 |
-| `cztest::ReturnRef(v)` | 返回已有对象的引用（函数返回引用时使用） |
-| `cztest::Invoke(f)` / 直接传 lambda | 调用自定义可调用对象 |
+| `cztest::Return(v)` | a fixed value |
+| `cztest::ReturnRef(v)` | a reference to an existing object |
+| `cztest::Invoke(f)` | any callable |
 
-动作可以捕获**只可移动**的对象（`unique_ptr` 等）：cztest 自己实现了 move-only 的可调用体，
-不依赖 C++23 的 `std::move_only_function`（有些标准库定义了它的特性宏却没有提供这个类）✓。
+An action may capture a **move only** object; cztest ships its own move only callable
+instead of relying on `std::move_only_function`, which not every library provides.
 
-### 4. 匹配参数
+A mock is strict: a call that matches no expectation fails immediately and prints the
+arguments it received, and an expectation whose count is not met is reported when the
+test ends.
+
+#### Matchers
+
+`Eq` `Ne` `Lt` `Le` `Gt` `Ge` `Any` `Not` `StrEq` `HasSubstr` `StartsWith` `EndsWith`
+`IsNull` `NotNull` `Truly`. A plain value means `Eq`.
+
+Matchers compose, and one of your own only needs a `Matches` member:
 
 ```cpp
-EXPECT_CALL(mock, Get(cztest::Gt(10)))         .Times(1).WillOnce(cztest::Return(1));
-EXPECT_CALL(mock, Put(1, cztest::HasSubstr("err"))).Times(cztest::AnyNumber());
-EXPECT_CALL(mock, Get(cztest::Any()))          .Times(cztest::AnyNumber()).WillRepeatedly(cztest::Return(0));
-```
-
-可用匹配器：`Eq` `Ne` `Lt` `Le` `Gt` `Ge` `Any` `Not` `StrEq` `HasSubstr`
-`StartsWith` `EndsWith` `IsNull` `NotNull` `Truly`。也可以直接写常量值，等价于 `Eq(...)`。
-
-匹配器可以组合，也可以自己写（只需要一个 `Matches` 成员，不必继承任何东西）：
-
-```cpp
-EXPECT_THAT(value, cztest::AllOf(cztest::Ge(1), cztest::Lt(100)));   // 全部满足
-EXPECT_THAT(value, cztest::AnyOf(cztest::Eq(1), cztest::Eq(2)));    // 任一满足
-EXPECT_THAT(value, cztest::Not(cztest::Eq(3)));                       // 取反
-EXPECT_THAT(items, cztest::ElementsAre(cztest::Eq(1), cztest::Ge(2))); // 逐个元素
+EXPECT_THAT(value, cztest::AllOf(cztest::Ge(1), cztest::Lt(100)));   // all of them
+EXPECT_THAT(value, cztest::AnyOf(cztest::Eq(1), cztest::Eq(2)));    // any of them
+EXPECT_THAT(value, cztest::Not(cztest::Eq(3)));                     // negated
+EXPECT_THAT(items, cztest::ElementsAre(cztest::Eq(1), cztest::Ge(2)));  // element by element
 
 struct IsEven {
     bool Matches(int value) const { return value % 2 == 0; }
@@ -385,189 +341,212 @@ struct IsEven {
 EXPECT_THAT(value, IsEven{});
 ```
 
-比较类匹配器在类型提供 `<=>` 时走三路比较，因此只定义了 `operator<=>` 的类型也能用 ✓。
+The comparison matchers use the three way comparison when the type has one, so a type
+that only defines `operator<=>` works as well.
 
-匹配时**最后注册且能匹配的期望优先**（与 GoogleMock 一致）；当多个期望都能匹配时，
-最近声明的那个生效，其余的期望仍然需要满足自己的次数约束。
-
-### 4.1 动作的约束
-
-动作必须与被 mock 的函数签名一致，这一点在编译期检查：
+#### Two compile time guards
 
 ```cpp
-EXPECT_CALL(mock, Get(1)).WillOnce([](int key) { return key * 2; });   // ✓
-EXPECT_CALL(mock, Get(1)).WillOnce([](std::string) { return 0; });      // ✗ 编译错误
-```
-
-签名不匹配时报的是"约束不满足"并指出概念名（`ActionFor`），而不是 `std::function`
-那句著名的 "no match for the conversion"。
-
-### 5. 自动校验
-
-* 没有匹配到任何期望的调用 → 立刻报错
-* 期望的调用次数不满足 → 用例结束时报错（mock 是局部变量时在析构时校验）
-* 同一个期望在没有设置 `WillRepeatedly()` 的情况下被调用多次 → 报错并提示改用 `WillRepeatedly()`
-
-### 6. 两个编译期护栏
-
-框架无法枚举接口的成员（C++ 还没有反射），但下面两件事可以在编译期检查：
-
-```cpp
-class MockStorage : public IStorage, public cztest::MockBase {
+class MockHttp : public IHttp, public cztest::MockBase {
  public:
-    CZTEST_MOCK_INTERFACE(IStorage);   // 接口必须有虚析构
-    CZTEST_MOCK_METHOD(int, Get, int);
+    CZTEST_MOCK_INTERFACE(IHttp);   // the interface needs a virtual destructor
+    CZTEST_MOCK_METHOD(bool, Get, const std::string&, std::string&);
 };
-CZTEST_MOCK_COMPLETE(MockStorage);     // mock 必须实现了接口的所有方法
+CZTEST_MOCK_COMPLETE(MockHttp);     // the mock implements every method
 ```
 
-* `CZTEST_MOCK_INTERFACE` → 接口没有虚析构时编译报错（通过接口指针 delete 是未定义行为）
-* `CZTEST_MOCK_COMPLETE` → mock 仍然是抽象类时报错，并指出"有接口方法没有写 `CZTEST_MOCK_METHOD`"
-  （方法签名写错的话，`override` 本身就会在宏那一行报错 ✓）
+A method whose signature does not match the interface is reported by `override`, at the
+line of the macro.
 
-### 7. 线程安全边界
+#### Thread safety
 
-**mock 不是线程安全的**：调用计数和期望表都是没有锁的普通成员。
-一个线程一个 mock，或者自己加锁 ✓。这一点写在文档里，而不是偷偷假设。
+**A mock is not thread safe**: the call counter and the expectation registry are plain
+members without a lock. Use one mock per thread, or guard the calls yourself.
 
----
-
-## 运行器
+## The runner
 
 ```
---filter=<pattern>   只运行匹配的用例，支持 * 和 ? 通配符
---list               列出所有用例后退出
---repeat=<n>         每个用例重复运行 n 次
---quiet / -q         只输出失败详情和汇总（CI 用）
---verbose / -v       额外输出每个用例的 "[ RUN ]" 行（排查卡死时用）
---color=on|off       强制开启/关闭彩色输出（默认自动检测）
---junit=<file>       输出 JUnit XML 报告
---help               显示帮助
+--filter=<pattern>   run only the matching tests ('*' and '?' wildcards)
+--list               list the registered tests and exit
+--repeat=<n>         run every test n times
+--quiet / -q         only print failures and the summary
+--verbose / -v       also print a "[ RUN ]" line before every test
+--color=on|off       force colored output on or off
+--junit=<file>       write a JUnit XML report
+--help               show the help
 ```
 
-用例名格式为 `Suite.Name`，例如：
+The names are `Suite.Name`:
 
 ```bash
 ./tests --filter=Mock.*
-./tests --filter=ContainerFixture.SizeIsThree
+./tests --filter="Basic/TrimTest.RemovesTheSpaces/1"
 ```
 
-### 输出
-
-默认每个用例只占一行：
+One line per test, the details of a failure right below it:
 
 ```
-[==========] Running 28 test(s).
-[       OK ] Assertions.Boolean
+[==========] Running 4 test(s).
 [       OK ] Assertions.Comparison
 [  FAILED  ] Mock.SequenceOfActions
 C:\path\tests\test_mock.cpp:31: Failure
 Expected: Get(1) == 2
   Actual: 1 vs 2
-[==========] 28 test(s) ran. (3 ms total)
-[  PASSED  ] 27 test(s).
+[  SKIPPED ] Skip.EndsTheTestWithoutFailing
+[==========] 4 test(s) ran. (0 ms total)
+[  PASSED  ] 3 test(s).
+[  SKIPPED ] 1 test(s).
 [  FAILED  ] 1 test(s) failed.
 ```
 
-* 失败详情紧跟在失败的用例下面，不用往上翻
-* `--quiet` 只保留失败用例和汇总，适合 CI
-* `--verbose` 恢复 "[ RUN ]" 行，用例卡死时能看出卡在哪一个
+The exit code is 0 when everything passed or was skipped, and 1 otherwise.
 
----
-
-## 与 cizon2 集成
-
-`cizon.toml`：
+## With cizon2
 
 ```toml
+# cizon.toml
 [project]
-name = "cztest"
+name = "bintree"
 edition = "c++20"
 compile_commands = true
 
 [compiler]
-# strict 展开为 -Wall -Wextra -Wpedantic，werror 让警告变成错误
+# strict expands to -Wall -Wextra -Wpedantic, werror turns warnings into errors
 strict = true
 werror = true
 
 [[target]]
-name = "cztest_selftest"
+name = "bintree"
+kind = "static_lib"
+sources = ["src"]
+
+[[target]]
+name = "bintree_tests"
 kind = "test"
-sources = ["tests"]
-```
+sources = ["tests/unit"]
+links = ["bintree"]
 
-`kind = "test"` 的 target 只有 `cizon2 test` 会构建和运行，`cizon2 build` / `cizon2 run`
-会完全忽略它。cizon2 会自动把项目的 `include` 目录加入头文件搜索路径，因此测试代码里
-直接 `#include <cztest/cztest.hpp>` 即可，无需额外的 `-I` 参数。
+[[target]]
+name = "bintree_integration_tests"
+kind = "test"
+sources = ["tests/integration"]
+links = ["bintree"]
+```
 
 ```bash
-cizon2 build                       # 只构建普通 target（不含测试）
-cizon2 test                        # 构建并运行全部 kind = "test" 的 target
-cizon2 test cztest_selftest        # 只跑指定的测试 target
-cizon2 test -- --filter=Mock.*     # 透传参数给测试进程
+cizon2 build                        # only the normal targets
+cizon2 test                         # builds and runs every kind = "test" target
+cizon2 test bintree_tests           # one target
+cizon2 test -- --filter=Mock.*      # arguments are passed to the test process
 ```
 
-`cizon2 test` 与测试框架无关，只认进程的退出码（0 = 通过），因此本框架无需任何改动即可接入。
-测试进程自己的输出会被原样回放，cizon2 自己只补充 "Passed / Failed" 与汇总。
+A `kind = "test"` target is ignored by `cizon2 build` and `cizon2 run`; only
+`cizon2 test` builds and runs it. The test process is judged by its exit code, which is
+why the framework does not need to be known to cizon2 at all.
 
-### 把 cztest 作为依赖引入
+### Using cztest as a dependency
 
-cztest 是纯头文件库，作为依赖引入时不需要编译任何东西：
+cztest is header only, so a dependency needs no compilation:
 
 ```bash
-cizon2 add https://github.com/you/cztest     # 写入 [dependencies] 与 cizon.lock
-cizon2 sync                                   # 还原/校验依赖（不构建）
+cizon2 add https://github.com/you/cztest   # writes [dependencies] and cizon.lock
+cizon2 sync                                 # restores the checkouts, without building
 ```
 
-cizon2 会自动加上 `-Ideps/cztest/include` 和 `-Ideps/cztest`，所以依赖方**不需要手写 `-I`**，
-也不需要 `system_links`（对比 gtest 要 `-lgtest_main -lgtest`）。
+cizon2 adds `-Ideps/cztest/include` and `-Ideps/cztest` on its own, so the project
+needs no `-I` flag and no `system_links` — compare gtest, which needs
+`-lgtest_main -lgtest`.
 
-> 需要 cizon2 v0.7 及以上（`kind = "test"`）。旧版本请用 `kind = "bin"` +
-> `cizon2 run cztest_selftest`，效果等价。
+### Unit tests and integration tests
 
----
+Keep the two apart: they belong in separate targets, and they answer different
+questions.
 
-## 教学式报错
+| | unit test | integration test |
+| --- | --- | --- |
+| dependencies | all fake (mocks) | real |
+| speed | milliseconds | seconds |
+| a failure means | the logic is wrong | two parts do not fit together |
 
-cztest 不支持的 GoogleTest 写法，**报错会直接告诉你该怎么做**（而不是一句 "not declared in this scope"）：
+An integration test that needs a file, a database or a socket is still a test: it
+belongs in `tests/integration/`, in its own target, and it has to be isolated
+(a temporary directory, an in-memory database, a port the system picks).
+
+## Migrating from GoogleTest
+
+The assertion layer needs no changes at all. The mechanical part:
+
+```bash
+# the namespace
+sed -i 's/::testing::/cztest::/g' tests/*.cpp
+
+# the fixture base class
+sed -i 's/public ::testing::Test/public cztest::Test/' tests/*.cpp
+
+# the mock method declaration:
+#   MOCK_METHOD(ret, Name, (types...), (override));
+# → CZTEST_MOCK_METHOD(ret, Name, types...)
+sed -i 's/MOCK_METHOD(\(.*\), (\(.*\)), (override));/CZTEST_MOCK_METHOD(\1, \2);/' tests/*.cpp
+```
+
+Two things cannot be replaced by a script: `::testing::_` becomes `cztest::Any()`, and
+`ON_CALL(...).WillByDefault(...)` becomes
+`EXPECT_CALL(...).WillRepeatedly(...)`.
+
+For the GoogleTest features cztest does not have, the compiler explains what to use
+instead:
 
 ```
 error: static assertion failed: cztest has no ON_CALL. Use EXPECT_CALL(mock, Method(args))
-       .WillRepeatedly(action) for the default behaviour, and add one EXPECT_CALL per distinct
-       call if the answers differ.
+       .WillRepeatedly(action) for the default behaviour, ...
 ```
 
-覆盖的写法：`ON_CALL` `EXPECT_THAT` `MOCK_METHOD` `EXPECT_DEATH` `TYPED_TEST` `GTEST_SKIP` ✓
-（对应 `cztest/compat.hpp`，默认随 `<cztest/cztest.hpp>` 一起包含；
-同时使用 GoogleTest 时可以 `#define CZTEST_NO_COMPAT` 关掉它。）
+The complete list, with the counterpart of every matcher, is in
+[docs/migration-gtest.md](docs/migration-gtest.md).
 
-mock 类忘了继承 `cztest::MockBase` 时，报错也是一句话：
+## Design notes
 
-```
-error: static assertion failed: A mock class has to inherit cztest::MockBase:
-       class MockX : public IX, public cztest::MockBase { ... };
-```
+The principles behind the code, and what they cost.
 
----
+**Single header, or free function mocking — not both.** Intercepting a free function
+needs link-time symbol replacement, which needs a compiled component and does not
+port cleanly. cztest took the single header and mocks virtual methods.
 
-## 已知限制
+**The vocabulary of the biggest framework.** The names are GoogleTest's, so that
+migrating code needs no new concepts.
 
-* `EXPECT_CALL(obj, Method(args))` 依赖 `##` 拼接 `obj.gmock_Method`，这是 GCC / Clang 的
-  实际行为；MSVC 的传统预处理器可能需要改写为 `EXPECT_CALL(obj, Method, (args))` 形式。
-* mock 函数的参数类型必须与接口**完全一致**（`const`、引用都要写全）。
-* 无参数函数必须使用 `CZTEST_MOCK_NOARG_METHOD` 系列宏。
-* 一次 `EXPECT_CALL` 最多 8 个参数。
+**The assertion is a function; the macro is sugar.** That makes the assertions
+composable, unit testable and usable in a constant expression.
 
----
+**Everything that can be checked at compile time is.** The action and the matcher are
+constrained with concepts, the mock method is checked against the interface by
+`override`, two guards cover the virtual destructor and a missing mock method, and the
+name of a test is checked by a `consteval` function.
 
-## 文档
+**An error message has to say what to do.** The GoogleTest spellings that cztest does
+not support fail with the alternative, not with "not declared in this scope".
 
-| 文档 | 内容 |
+**The boundaries are written down.** No free function mocking, no thread safe mock, no
+death tests: all of it is in the documentation rather than left to a guess.
+
+## Limitations
+
+- `EXPECT_CALL(obj, Method(args))` relies on `##` pasting (`obj.gmock_Method`), which is
+  what GCC and Clang do in practice.
+- The parameter types of a mocked method have to match the interface exactly,
+  `const` and references included.
+- A mocked method without parameters needs `CZTEST_MOCK_NOARG_METHOD`.
+- At most eight parameters per mocked method.
+- A mock is not thread safe.
+- No death tests, no typed tests, no `EXPECT_THAT` with the matchers of GoogleMock.
+
+## Documentation
+
+| Document | Content |
 | --- | --- |
-| [docs/tutorial.md](docs/tutorial.md) | 完整使用教程：从最小用例到集成测试 |
-| [docs/migration-gtest.md](docs/migration-gtest.md) | 从 GoogleTest 迁移过来要改什么（附实测编译记录） |
-
----
+| [docs/tutorial.md](docs/tutorial.md) | the complete tutorial, from the smallest test to integration tests |
+| [docs/migration-gtest.md](docs/migration-gtest.md) | what changes when you come from GoogleTest, with a record of a real migration |
+| [README-zh.md](README-zh.md) | the Chinese version of this document |
 
 ## License
 
