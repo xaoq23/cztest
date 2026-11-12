@@ -59,3 +59,28 @@ TEST(Filter, TheWildcardsWork) {
   EXPECT_FALSE(cztest::detail::WildcardMatch("Math.*", "Parser.Addition"));
   EXPECT_FALSE(cztest::detail::WildcardMatch("*Addition", "Math.Subtraction"));
 }
+
+TEST(Filter, ThePatternsAreSeparatedByAColon) {
+  const auto filter = cztest::detail::ParseFilter("Math.*:Parser.*");
+  EXPECT_EQ(filter.positive.size(), 2u);
+  EXPECT_TRUE(filter.negative.empty());
+  EXPECT_TRUE(cztest::detail::FilterMatches(filter, "Math.Addition"));
+  EXPECT_TRUE(cztest::detail::FilterMatches(filter, "Parser.Reads"));
+  EXPECT_FALSE(cztest::detail::FilterMatches(filter, "Mock.Get"));
+}
+
+TEST(Filter, APatternWithADashExcludes) {
+  // The dash stands right behind the colon, the way GoogleTest writes it.
+  const auto filter = cztest::detail::ParseFilter("*:-Slow.*");
+  EXPECT_EQ(filter.positive.size(), 1u);
+  EXPECT_EQ(filter.negative.size(), 1u);
+  EXPECT_TRUE(cztest::detail::FilterMatches(filter, "Fast.Reads"));
+  EXPECT_FALSE(cztest::detail::FilterMatches(filter, "Slow.Reads"));
+}
+
+TEST(Filter, OnlyExclusionsRunEverythingElse) {
+  const auto filter = cztest::detail::ParseFilter("-Slow.*");
+  EXPECT_TRUE(filter.positive.empty());
+  EXPECT_TRUE(cztest::detail::FilterMatches(filter, "Fast.Reads"));
+  EXPECT_FALSE(cztest::detail::FilterMatches(filter, "Slow.Reads"));
+}

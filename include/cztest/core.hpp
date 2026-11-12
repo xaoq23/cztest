@@ -934,6 +934,47 @@ inline bool WildcardMatch(std::string_view pattern, std::string_view text) {
   return false;
 }
 
+/// The filter of the runner.
+///
+/// The syntax is the one of GoogleTest: the patterns are separated by a
+/// colon, and a pattern that starts with a dash excludes the tests it
+/// matches.  A test runs when it matches one of the positive patterns (or
+/// when there is none) and none of the negative ones.
+struct Filter {
+  std::vector<std::string> positive;
+  std::vector<std::string> negative;
+};
+
+inline Filter ParseFilter(const std::string& text) {
+  Filter filter;
+  std::size_t start = 0;
+  while (true) {
+    const auto end = text.find(':', start);
+    const auto part = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    if (!part.empty()) {
+      if (part.front() == '-') {
+        filter.negative.push_back(part.substr(1));
+      } else {
+        filter.positive.push_back(part);
+      }
+    }
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return filter;
+}
+
+inline bool FilterMatches(const Filter& filter, std::string_view text) {
+  for (const auto& pattern : filter.negative) {
+    if (WildcardMatch(pattern, text)) return false;
+  }
+  if (filter.positive.empty()) return true;
+  for (const auto& pattern : filter.positive) {
+    if (WildcardMatch(pattern, text)) return true;
+  }
+  return false;
+}
+
 inline bool ParseColorMode(const std::string& value, bool* out) {
   if (value == "on" || value == "always" || value == "yes" || value == "1") {
     *out = true;
@@ -1072,8 +1113,9 @@ class TestRunner {
     }
 
     std::vector<const TestInfo*> selected;
+    const auto filter = ParseFilter(options_.filter);
     for (const auto& test : all) {
-      if (WildcardMatch(options_.filter, test.full_name())) {
+      if (FilterMatches(filter, test.full_name())) {
         selected.push_back(&test);
       }
     }
@@ -1293,7 +1335,8 @@ class TestRunner {
 
 inline void PrintUsage(const char* program) {
   std::cout << "Usage: " << program << " [options]\n"
-            << "  --filter=<pattern>   run only tests matching <pattern> ('*' and '?' wildcards)\n"
+            << "  --filter=<patterns>  run only the tests that match ('*' and '?' wildcards,\n"
+            << "                      patterns separated by ':', a leading '-' excludes)\n"
             << "  --list               list the registered tests and exit\n"
             << "  --repeat=<n>         run every test n times\n"
             << "  --quiet              only print failures and the summary\n"
