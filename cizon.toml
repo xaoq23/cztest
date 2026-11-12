@@ -1,7 +1,7 @@
 [project]
 name = "cztest"
 version = "0.1.0"
-edition = "c++17"
+edition = "c++20"
 compile_commands = true
 
 [compiler]
