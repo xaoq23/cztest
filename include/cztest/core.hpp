@@ -697,16 +697,18 @@ struct RunOptions {
   bool quiet{false};    // only print failures and the summary
 };
 
-inline bool WildcardMatch(const char* pattern, const char* text) {
-  if (*pattern == '\0') return *text == '\0';
-  if (*pattern == '*') {
-    for (const char* t = text;; ++t) {
-      if (WildcardMatch(pattern + 1, t)) return true;
-      if (*t == '\0') return false;
+inline bool WildcardMatch(std::string_view pattern, std::string_view text) {
+  if (pattern.empty()) return text.empty();
+  if (pattern.front() == '*') {
+    for (std::size_t i = 0; i <= text.size(); ++i) {
+      if (WildcardMatch(pattern.substr(1), text.substr(i))) return true;
     }
+    return false;
   }
-  if (*text == '\0') return false;
-  if (*pattern == '?' || *pattern == *text) return WildcardMatch(pattern + 1, text + 1);
+  if (text.empty()) return false;
+  if (pattern.front() == '?' || pattern.front() == text.front()) {
+    return WildcardMatch(pattern.substr(1), text.substr(1));
+  }
   return false;
 }
 
@@ -784,7 +786,7 @@ class TestRunner {
 
     std::vector<const TestInfo*> selected;
     for (const auto& test : all) {
-      if (WildcardMatch(options_.filter.c_str(), test.full_name().c_str())) {
+      if (WildcardMatch(options_.filter, test.full_name())) {
         selected.push_back(&test);
       }
     }
