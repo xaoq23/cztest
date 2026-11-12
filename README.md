@@ -311,8 +311,30 @@ EXPECT_CALL(mock, Get(cztest::Any()))          .Times(cztest::AnyNumber()).WillR
 可用匹配器：`Eq` `Ne` `Lt` `Le` `Gt` `Ge` `Any` `Not` `Truly` `StrEq` `HasSubstr`
 `StartsWith` `EndsWith` `IsNull` `NotNull`。也可以直接写常量值，等价于 `Eq(...)`。
 
+**自定义匹配器**只需要一个 `Matches` 成员，不必继承任何东西：
+
+```cpp
+struct IsEven {
+    bool Matches(int value) const { return value % 2 == 0; }
+};
+
+EXPECT_CALL(mock, Get(IsEven{}));   // 只接受偶数
+```
+
 匹配时**最后注册且能匹配的期望优先**（与 GoogleMock 一致）；当多个期望都能匹配时，
 最近声明的那个生效，其余的期望仍然需要满足自己的次数约束。
+
+### 4.1 动作的约束
+
+动作必须与被 mock 的函数签名一致，这一点在编译期检查：
+
+```cpp
+EXPECT_CALL(mock, Get(1)).WillOnce([](int key) { return key * 2; });   // ✓
+EXPECT_CALL(mock, Get(1)).WillOnce([](std::string) { return 0; });      // ✗ 编译错误
+```
+
+签名不匹配时报的是"约束不满足"并指出概念名（`ActionFor`），而不是 `std::function`
+那句著名的 "no match for the conversion"。
 
 ### 5. 自动校验
 
