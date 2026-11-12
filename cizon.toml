@@ -1,0 +1,13 @@
+[project]
+name = "cztest"
+version = "0.1.0"
+edition = "c++17"
+compile_commands = true
+
+[compiler]
+flags = ["-Wall", "-Wextra", "-Wpedantic"]
+
+[[target]]
+name = "cztest_selftest"
+kind = "test"
+sources = ["tests"]
