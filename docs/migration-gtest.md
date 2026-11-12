@@ -137,19 +137,23 @@ cztest 的一行宏会自己解析 `--filter` / `--list` / `--junit` 等参数 �
 
 ## 没有对应物的 gtest 特性
 
-| gtest 特性 | 怎么办 |
+cztest 对这些写法给出的是**教学式报错**（见 `include/cztest/compat.hpp`）：报错里直接写清楚
+cztest 里该怎么做，而不是一句 "not declared in this scope"。
+
+| gtest 特性 | 报错里给的替代方案 |
 | --- | --- |
-| `EXPECT_THAT(v, AllOf(Ge(1), Le(100)))` | 改成具体断言；复杂条件用 `cztest::Truly(lambda)` |
+| `EXPECT_THAT(v, AllOf(Ge(1), Le(100)))` | 直接比较（`EXPECT_EQ`）；复杂条件用 `cztest::Truly(lambda)` |
 | `EXPECT_THAT(v, ElementsAre(...))` | 逐个 `EXPECT_EQ`；或 `cztest::Truly` |
-| `ON_CALL(...).WillByDefault(...)` | 改成 `EXPECT_CALL(...).WillRepeatedly(...)` |
-| `SCOPED_TRACE("...")` | 暂时去掉；或在消息里手写上下文 |
-| `GTEST_SKIP()` | 暂时 `return`；框架目前没有跳过语义 |
-| `EXPECT_DEATH` | 不支持（进程级断言） |
-| `TYPED_TEST` | 改成 `TEST_P` + `cztest::Values` |
+| `ON_CALL(...).WillByDefault(...)` | `EXPECT_CALL(...).WillRepeatedly(...)`；每次调用不同答案就写多个 `EXPECT_CALL` |
+| `EXPECT_DEATH` | 让函数返回可断言的结果，直接测错误路径 |
+| `TYPED_TEST` | `TEST_P` + `cztest::Values` |
+| `MOCK_METHOD(ret, Name, (types), (override))` | `CZTEST_MOCK_METHOD(ret, Name, types)`（第三参数不带外层括号） |
 | `NiceMock<T>` / `StrictMock<T>` | 不需要：cztest 默认就是 strict |
 | `MockFunction`（mock 自由函数） | 不支持；改成依赖注入（把函数做成接口成员） |
 | `::testing::RecordProperty` | 不支持 |
 | `testing::internal::CaptureStdout` | 不支持；把输出做成返回值更好测 |
+
+**已经有的**：`SCOPED_TRACE`（同名 ✓）、`SKIP()`（对应 `GTEST_SKIP()` ✓）。
 
 ---
 

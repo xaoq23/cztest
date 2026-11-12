@@ -131,6 +131,8 @@ void ReportFailure(std::source_location location, std::string message, bool fata
 | `EXPECT_DOUBLE_EQ(a,b)` / `EXPECT_FLOAT_EQ(a,b)` | 浮点比较，容差 4 个 ULP（与 GoogleTest 同规则） |
 | `EXPECT_THROW(stmt, Type)` / `NO_THROW` / `ANY_THROW` | 异常断言 |
 | `ADD_FAILURE()` / `FAIL()` | 手动失败 / 致命失败 |
+| `SCOPED_TRACE("...")` | 给失败补充上下文（作用域内有效） |
+| `SKIP("...")` | 结束当前用例但不判失败 |
 
 所有断言都可以追加自定义信息：
 
@@ -170,6 +172,35 @@ Expected: value == 42
 ```
 
 断言直接写在用例里时不打印函数名（那时只会是框架生成的内部名字，没有信息量）。
+
+### SCOPED_TRACE：给失败补上下文
+
+```cpp
+for (const auto& item : items) {
+    SCOPED_TRACE("item: " << item.name);
+    EXPECT_EQ(item.value, 0);
+}
+```
+
+失败时会把所有还开着的 trace 一起报出来（ innermost 先）：
+
+```
+Expected: item.value == 0
+  Actual: 3 vs 0
+Traces:
+  [2] index: 1
+  [1] item: beta
+```
+
+### SKIP：跳过而不是失败
+
+```cpp
+if (!ready) {
+    SKIP("the service is not up yet");
+}
+```
+
+用例会被报成 `[  SKIPPED ]`，不计入失败，退出码仍然是 0 ✓。
 
 ---
 
@@ -436,6 +467,29 @@ cizon2 会自动加上 `-Ideps/cztest/include` 和 `-Ideps/cztest`，所以依�
 
 > 需要 cizon2 v0.7 及以上（`kind = "test"`）。旧版本请用 `kind = "bin"` +
 > `cizon2 run cztest_selftest`，效果等价。
+
+---
+
+## 教学式报错
+
+cztest 不支持的 GoogleTest 写法，**报错会直接告诉你该怎么做**（而不是一句 "not declared in this scope"）：
+
+```
+error: static assertion failed: cztest has no ON_CALL. Use EXPECT_CALL(mock, Method(args))
+       .WillRepeatedly(action) for the default behaviour, and add one EXPECT_CALL per distinct
+       call if the answers differ.
+```
+
+覆盖的写法：`ON_CALL` `EXPECT_THAT` `MOCK_METHOD` `EXPECT_DEATH` `TYPED_TEST` `GTEST_SKIP` ✓
+（对应 `cztest/compat.hpp`，默认随 `<cztest/cztest.hpp>` 一起包含；
+同时使用 GoogleTest 时可以 `#define CZTEST_NO_COMPAT` 关掉它。）
+
+mock 类忘了继承 `cztest::MockBase` 时，报错也是一句话：
+
+```
+error: static assertion failed: A mock class has to inherit cztest::MockBase:
+       class MockX : public IX, public cztest::MockBase { ... };
+```
 
 ---
 
