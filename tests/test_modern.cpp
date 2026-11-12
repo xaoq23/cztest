@@ -95,3 +95,10 @@ TEST(Modern, DoubleComparisonUsesFourUnitsInTheLastPlace) {
   // NaN is never almost equal to anything, not even to itself.
   EXPECT_FALSE(cztest::detail::AlmostEquals(std::nan(""), std::nan("")));
 }
+
+TEST(Modern, FloatingPointValuesArePrintedWithRoundTripPrecision) {
+  // 0.1 + 0.2 is not 0.3; a message with six digits would hide it.
+  const auto result = cztest::ExpectEqual(0.1 + 0.2, 0.3);
+  EXPECT_TRUE(result.failed());
+  EXPECT_NE(result.message.find("0.30000000000000004"), std::string::npos);
+}

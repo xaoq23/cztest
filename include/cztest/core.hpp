@@ -16,6 +16,7 @@
 #include <exception>
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -62,6 +63,13 @@ std::string PrintValue(const T& value) {
     return std::string("\"") + value + "\"";
   } else if constexpr (std::is_same_v<D, std::string>) {
     return "\"" + value + "\"";
+  } else if constexpr (std::is_floating_point_v<D>) {
+    // Print with the precision that round trips: the default of six digits
+    // would show 0.1 + 0.2 as "0.3" and hide the difference a test is
+    // about.
+    std::ostringstream os;
+    os << std::setprecision(std::numeric_limits<D>::max_digits10) << value;
+    return os.str();
   } else if constexpr (IsStreamable<T>::value) {
     std::ostringstream os;
     os << value;
@@ -838,12 +846,19 @@ class Console {
   bool color_;
 };
 
+/// Whether a location points at something.
+inline bool HasLocation(std::source_location location) {
+  return location.file_name() != nullptr && *location.file_name() != '\0';
+}
+
 /// Renders a source location as "file:line (function)".
 ///
 /// The function name is omitted when the assertion sits directly in a test
 /// body: there the name would be the one of the generated body function,
-/// which tells the reader nothing.
+/// which tells the reader nothing.  An empty location renders as nothing at
+/// all, which happens when the framework has nothing to point at.
 inline std::string DescribeLocation(std::source_location location) {
+  if (location.file_name() == nullptr || *location.file_name() == '\0') return {};
   std::string text = location.file_name();
   text += ":";
   text += std::to_string(location.line());
@@ -919,7 +934,8 @@ class TestRunner {
           // failure, even in quiet mode.
           console.Print("\033[0;31m", "[  FAILED  ] " + test->full_name());
           for (const auto& failure : result.failures) {
-            console.Print(nullptr, DescribeLocation(failure.location) + ": Failure\n" + failure.message);
+            const auto where = DescribeLocation(failure.location);
+            console.Print(nullptr, (where.empty() ? std::string() : where + ": ") + "Failure\n" + failure.message);
           }
         } else if (!quiet) {
           console.Print("\033[0;32m", "[       OK ] " + test->full_name());
