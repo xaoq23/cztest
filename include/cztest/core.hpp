@@ -1057,6 +1057,13 @@ class TestRunner {
       }
     }
 
+    if (selected.empty()) {
+      // A filter that matches nothing runs no test at all, and that is
+      // easy to miss in the log of a CI run.
+      console.Print("\033[0;33m", "[==========] No test matched the filter '" + options_.filter + "'");
+      console.Print(nullptr, "Check the names with --list.");
+    }
+
     if (options_.list_tests) {
       for (const auto* test : selected) {
         std::cout << test->full_name() << "\n";

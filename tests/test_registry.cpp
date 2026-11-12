@@ -1,4 +1,5 @@
-// The registry: it has to notice the tests that share a name.
+// The registry: it has to notice the tests that share a name, and the filter
+// that selects the tests.
 #include <cztest/cztest.hpp>
 
 #include <string>
@@ -45,4 +46,16 @@ TEST(Registry, EveryRepeatedNameIsFound) {
   ASSERT_EQ(duplicates.size(), 2u);
   EXPECT_EQ(duplicates[0].full_name, "Math.Addition");
   EXPECT_EQ(duplicates[1].full_name, "Parser.Reads");
+}
+
+TEST(Filter, TheWildcardsWork) {
+  EXPECT_TRUE(cztest::detail::WildcardMatch("*", "Math.Addition"));
+  EXPECT_TRUE(cztest::detail::WildcardMatch("Math.*", "Math.Addition"));
+  EXPECT_TRUE(cztest::detail::WildcardMatch("*.Addition", "Math.Addition"));
+  EXPECT_TRUE(cztest::detail::WildcardMatch("Math.Addition", "Math.Addition"));
+  EXPECT_TRUE(cztest::detail::WildcardMatch("M?th.*", "Math.Addition"));
+  // The pattern has to match the whole name.
+  EXPECT_FALSE(cztest::detail::WildcardMatch("Math", "Math.Addition"));
+  EXPECT_FALSE(cztest::detail::WildcardMatch("Math.*", "Parser.Addition"));
+  EXPECT_FALSE(cztest::detail::WildcardMatch("*Addition", "Math.Subtraction"));
 }

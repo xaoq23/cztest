@@ -384,6 +384,14 @@ The names are `Suite.Name`:
 ./tests --filter="Basic/TrimTest.RemovesTheSpaces/1"
 ```
 
+A filter that matches nothing runs no test at all, and that is easy to miss in the
+log of a CI run, so the runner says so:
+
+```
+[==========] No test matched the filter 'Mock'
+Check the names with --list.
+```
+
 With `--repeat` every line says which run it belongs to, so a test that only fails
 sometimes is easy to spot:
 

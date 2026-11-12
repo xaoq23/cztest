@@ -374,6 +374,14 @@ CZTEST_MOCK_COMPLETE(MockHttp);     // mock 必须实现了接口的所有方法
 ./tests --filter="Basic/TrimTest.RemovesTheSpaces/1"
 ```
 
+过滤器匹配不到任何用例时 ✓ 一个用例都不会跑 ✓ —— 在 CI 的日志里很容易被忽略 ✓，
+所以运行器会明确说出来 ✓：
+
+```
+[==========] No test matched the filter 'Mock'
+Check the names with --list.
+```
+
 用 `--repeat` 时 ✓ 每一行都会标明这是第几次运行 ✓ —— 偶发失败的用例因此一眼就能看出来 ✓：
 
 ```
