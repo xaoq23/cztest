@@ -195,6 +195,62 @@ class TestContext {
 };
 
 // ---------------------------------------------------------------------------
+// Traces: the context a failure happened in.
+//
+// SCOPED_TRACE pushes a message for the lifetime of a scope; a failure that
+// happens inside that scope reports the messages of all the open scopes,
+// innermost first.
+// ---------------------------------------------------------------------------
+inline std::vector<std::string>& TraceStack() {
+  static thread_local std::vector<std::string> stack;
+  return stack;
+}
+
+/// Appends the open traces to a failure message.
+inline std::string AppendTraces(std::string message) {
+  const auto& stack = TraceStack();
+  if (stack.empty()) return message;
+  message += "\nTraces:";
+  for (std::size_t i = stack.size(); i-- > 0;) {
+    message += "\n  [";
+    message += std::to_string(i + 1);
+    message += "] ";
+    message += stack[i];
+  }
+  return message;
+}
+
+/// Pushes a trace for the lifetime of the object.
+class TraceScope {
+ public:
+  explicit TraceScope(std::string message) { TraceStack().push_back(std::move(message)); }
+  ~TraceScope() {
+    if (!TraceStack().empty()) TraceStack().pop_back();
+  }
+
+  TraceScope(const TraceScope&) = delete;
+  TraceScope& operator=(const TraceScope&) = delete;
+};
+
+}  // namespace detail
+
+/// Thrown by SKIP() to end the current test without failing it.
+class SkipTest : public std::exception {
+ public:
+  explicit SkipTest(std::string reason) : reason_(std::move(reason)) {}
+  const char* what() const noexcept override { return reason_.c_str(); }
+
+ private:
+  std::string reason_;
+};
+
+namespace detail {
+
+// The message of a trace or of a skip is a stream expression, the way
+// GoogleTest spells it: SCOPED_TRACE("item: " << item).
+[[noreturn]] inline void SkipNow(std::string reason) { throw SkipTest(std::move(reason)); }
+
+// ---------------------------------------------------------------------------
 // ReportFailure: records a failure in the running test.
 //
 // `fatal` additionally aborts the test by throwing FatalAssertionFailure. The
@@ -209,7 +265,7 @@ inline void ReportFailure(std::source_location location, std::string message, bo
       if (fatal) throw FatalAssertionFailure();
       return;
     }
-    ctx->AddFailure(location, std::move(message));
+    ctx->AddFailure(location, AppendTraces(std::move(message)));
   } else {
     std::cerr << "cztest: failure outside of a test: " << message << "\n";
   }
@@ -578,6 +634,35 @@ template <class F>
 #define FAIL() CZTEST_ASSERT_(::cztest::AssertionResult::Failure(""))
 #define SUCCEED() ((void)0)
 
+// ---------------------------------------------------------------------------
+// SCOPED_TRACE: describes the context a failure happened in.
+//
+// The message lives as long as the scope; a failure inside that scope reports
+// all the open messages, innermost first.
+//
+//   for (const auto& item : items) {
+//     SCOPED_TRACE("item: " << item.name);
+//     EXPECT_EQ(item.value, 0);
+//   }
+//
+// The name matches GoogleTest's, so migrating code keeps working.
+// ---------------------------------------------------------------------------
+#define CZTEST_SCOPED_TRACE(...)                                                    \
+  ::cztest::detail::TraceScope CZTEST_CONCAT(cztest_trace_, __LINE__)(              \
+      (::std::ostringstream{} << "" __VA_ARGS__).str())
+
+#define SCOPED_TRACE(...) CZTEST_SCOPED_TRACE(__VA_ARGS__)
+
+// ---------------------------------------------------------------------------
+// SKIP: ends the current test without failing it.
+//
+// The test is reported as skipped and does not count as a failure.
+// ---------------------------------------------------------------------------
+#define CZTEST_SKIP(...) \
+  ::cztest::detail::SkipNow((::std::ostringstream{} << "" __VA_ARGS__).str())
+
+#define SKIP(...) CZTEST_SKIP(__VA_ARGS__)
+
 
 // ---------------------------------------------------------------------------
 // Test registration
@@ -807,6 +892,7 @@ class TestRunner {
     const bool quiet = options_.quiet;
 
     std::vector<std::string> failed;
+    std::vector<std::string> skipped_tests;
     int total_run = 0;
     const auto start = std::chrono::steady_clock::now();
 
@@ -822,7 +908,12 @@ class TestRunner {
         }
         const auto result = RunSingle(*test);
         total_run += result.counted ? 1 : 0;
-        if (!result.passed) {
+        if (result.skipped) {
+          skipped_tests.push_back(test->full_name());
+          if (!quiet) {
+            console.Print("\033[0;33m", "[  SKIPPED ] " + test->full_name());
+          }
+        } else if (!result.passed) {
           failed.push_back(test->full_name());
           // The name of a failing test is always printed: it identifies the
           // failure, even in quiet mode.
@@ -842,9 +933,13 @@ class TestRunner {
 
     console.Print(nullptr, "[==========] " + std::to_string(total_run) + " test(s) ran. (" +
                               std::to_string(total_ms) + " ms total)");
-    const int passed = total_run - static_cast<int>(failed.size());
+    const int passed = total_run - static_cast<int>(failed.size()) -
+                       static_cast<int>(skipped_tests.size());
     if (passed > 0) {
       console.Print("\033[0;32m", "[  PASSED  ] " + std::to_string(passed) + " test(s).");
+    }
+    if (!skipped_tests.empty()) {
+      console.Print("\033[0;33m", "[  SKIPPED ] " + std::to_string(skipped_tests.size()) + " test(s).");
     }
     if (!failed.empty()) {
       console.Print("\033[0;31m", "[  FAILED  ] " + std::to_string(failed.size()) + " test(s) failed.");
@@ -861,6 +956,7 @@ class TestRunner {
   struct SingleResult {
     bool passed{true};
     bool counted{true};
+    bool skipped{false};
     std::vector<FailureRecord> failures;
   };
 
@@ -872,10 +968,14 @@ class TestRunner {
       ctx = &fallback;
     }
     ctx->Begin(test.full_name());
+    bool skipped = false;
     try {
       test.body();
     } catch (const FatalAssertionFailure&) {
       // The assertion already reported the failure; abort the test body.
+    } catch (const SkipTest&) {
+      // The test asked to be skipped; it did not fail.
+      skipped = true;
     } catch (const std::exception& e) {
       ctx->AddFailure(test.location, std::string("Unexpected exception: ") + e.what());
     } catch (...) {
@@ -884,7 +984,14 @@ class TestRunner {
 
     SingleResult result;
     result.passed = !ctx->HasFailures();
-    result.failures = ctx->failures();
+    result.skipped = skipped;
+    if (skipped) {
+      // A skipped test did not really run: its failures do not count.
+      result.failures.clear();
+      result.passed = true;
+    } else {
+      result.failures = ctx->failures();
+    }
     ctx->End();
     return result;
   }
