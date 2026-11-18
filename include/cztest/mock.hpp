@@ -678,11 +678,14 @@ auto Invoke(F callable) {
 #define CZTEST_NARG(...) CZTEST_NARG_(__VA_ARGS__, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
 #define CZTEST_NARG_(_1, _2, _3, _4, _5, _6, _7, _8, _9, N, ...) N
 
+// The trailing static_assert(true) makes the semicolon that the documentation
+// writes after CZTEST_MOCK_METHOD(...) part of the expansion: without it the
+// semicolon would be an extra one at class scope (-Wextra-semi / -Wpedantic).
 #define CZTEST_MOCK_DISPATCH_(Q, ret, name, n, ...) \
-  CZTEST_MOCK_PICK_(Q, n)(Q, ret, name, __VA_ARGS__)
+  CZTEST_MOCK_PICK_(Q, n)(Q, ret, name, __VA_ARGS__) static_assert(true)
 #define CZTEST_MOCK_PICK_(Q, n) CZTEST_MOCK_##n
 
-#define CZTEST_MOCK_DISPATCH_NOARG_(Q, ret, name) CZTEST_MOCK_0(Q, ret, name)
+#define CZTEST_MOCK_DISPATCH_NOARG_(Q, ret, name) CZTEST_MOCK_0(Q, ret, name) static_assert(true)
 
 /// The mocked interface needs a virtual destructor: deleting through a
 /// pointer to the interface is undefined behaviour otherwise.
@@ -818,7 +821,7 @@ auto Invoke(F callable) {
         "A mock class has to inherit cztest::MockBase: " \
         "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4, t5, t6, t7>(                         \
-        *this, #name, a1, a2, a3, a4, a5, a6, a7);                                               \
+        *this, #name, ::std::source_location::current(), a1, a2, a3, a4, a5, a6, a7);            \
   }                                                                                               \
   template <class M1, class M2, class M3, class M4, class M5, class M6, class M7>                   \
   auto gmock_##name(M1&& m1, M2&& m2, M3&& m3, M4&& m4, M5&& m5, M6&& m6, M7&& m7) Q {            \
@@ -838,7 +841,7 @@ auto Invoke(F callable) {
         "A mock class has to inherit cztest::MockBase: " \
         "class MockX : public IX, public cztest::MockBase { ... };");           \
     return ::cztest::detail::MockInvoke<ret, t1, t2, t3, t4, t5, t6, t7, t8>(                       \
-        *this, #name, a1, a2, a3, a4, a5, a6, a7, a8);                                           \
+        *this, #name, ::std::source_location::current(), a1, a2, a3, a4, a5, a6, a7, a8);        \
   }                                                                                               \
   template <class M1, class M2, class M3, class M4, class M5, class M6, class M7, class M8>         \
   auto gmock_##name(M1&& m1, M2&& m2, M3&& m3, M4&& m4, M5&& m5, M6&& m6, M7&& m7, M8&& m8) Q {      \

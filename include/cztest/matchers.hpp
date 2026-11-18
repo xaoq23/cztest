@@ -6,6 +6,7 @@
 
 #include <concepts>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -127,8 +128,12 @@ std::string DescribeMatcher(const M& matcher) {
 // Matcher<T>: matches an argument of type T.
 //
 // The matcher keeps either a comparison operator plus a reference value, or a
-// custom predicate.  Matching an argument of a different (but compatible)
-// type is supported through the templated Matches() overload.
+// custom predicate.  The comparison of a value matcher is bound at compile
+// time in the factory that creates it, so a matcher only instantiates the
+// operators it uses: Any() needs none, Eq() needs ==, Lt() needs < (or <=>).
+// The value is held in an optional, so T need not be default constructible.
+// Matching an argument of a different (but compatible) type is supported
+// through the templated Matches() overload.
 // ---------------------------------------------------------------------------
 template <class T>
 class Matcher : public detail::MatcherBase {
@@ -141,17 +146,19 @@ class Matcher : public detail::MatcherBase {
 
   // Plain values are compared with ==.
   template <class V, class = std::enable_if_t<!std::is_base_of_v<detail::MatcherBase, std::decay_t<V>>>>
-  Matcher(V&& value) : op_(Op::kEq), value_(static_cast<T>(std::forward<V>(value))), has_value_(true) {
-    desc_ = "is equal to " + cztest::detail::PrintValue(value_);
-  }
+  Matcher(V&& value)
+      : op_(Op::kEq),
+        value_(static_cast<T>(std::forward<V>(value))),
+        compare_(&CompareWith<Op::kEq>),
+        desc_("is equal to " + cztest::detail::PrintValue(*value_)) {}
 
   // Conversion from a matcher of a different value type.
   template <class U,
             class = std::enable_if_t<!std::is_same_v<U, T> && std::is_constructible_v<T, U>>>
   Matcher(const Matcher<U>& other) : op_(static_cast<Op>(other.op_)), desc_(other.desc_) {
-    if (other.has_value_) {
-      value_ = static_cast<T>(other.value_);
-      has_value_ = true;
+    if (other.value_.has_value()) {
+      value_ = static_cast<T>(*other.value_);
+      compare_ = ComparisonFor(op_);
     }
     if (other.has_predicate_) {
       has_predicate_ = true;
@@ -180,7 +187,7 @@ class Matcher : public detail::MatcherBase {
     Matcher<T> matcher;
     matcher.op_ = Op::kEq;
     matcher.value_ = value;
-    matcher.has_value_ = true;
+    matcher.compare_ = &CompareWith<Op::kEq>;
     matcher.desc_ = "is equal to " + cztest::detail::PrintValue(value);
     return matcher;
   }
@@ -189,7 +196,7 @@ class Matcher : public detail::MatcherBase {
     Matcher<T> matcher;
     matcher.op_ = Op::kNe;
     matcher.value_ = value;
-    matcher.has_value_ = true;
+    matcher.compare_ = &CompareWith<Op::kNe>;
     matcher.desc_ = "is not equal to " + cztest::detail::PrintValue(value);
     return matcher;
   }
@@ -198,7 +205,7 @@ class Matcher : public detail::MatcherBase {
     Matcher<T> matcher;
     matcher.op_ = Op::kLt;
     matcher.value_ = value;
-    matcher.has_value_ = true;
+    matcher.compare_ = &CompareWith<Op::kLt>;
     matcher.desc_ = "is less than " + cztest::detail::PrintValue(value);
     return matcher;
   }
@@ -207,7 +214,7 @@ class Matcher : public detail::MatcherBase {
     Matcher<T> matcher;
     matcher.op_ = Op::kLe;
     matcher.value_ = value;
-    matcher.has_value_ = true;
+    matcher.compare_ = &CompareWith<Op::kLe>;
     matcher.desc_ = "is at most " + cztest::detail::PrintValue(value);
     return matcher;
   }
@@ -216,7 +223,7 @@ class Matcher : public detail::MatcherBase {
     Matcher<T> matcher;
     matcher.op_ = Op::kGt;
     matcher.value_ = value;
-    matcher.has_value_ = true;
+    matcher.compare_ = &CompareWith<Op::kGt>;
     matcher.desc_ = "is greater than " + cztest::detail::PrintValue(value);
     return matcher;
   }
@@ -225,7 +232,7 @@ class Matcher : public detail::MatcherBase {
     Matcher<T> matcher;
     matcher.op_ = Op::kGe;
     matcher.value_ = value;
-    matcher.has_value_ = true;
+    matcher.compare_ = &CompareWith<Op::kGe>;
     matcher.desc_ = "is at least " + cztest::detail::PrintValue(value);
     return matcher;
   }
@@ -305,11 +312,24 @@ class Matcher : public detail::MatcherBase {
     if (op_ == Op::kAny) return true;
 
     if constexpr (std::is_same_v<std::decay_t<U>, T>) {
-      return Compare(value, value_);
+      return compare_(value, *value_);
     } else if constexpr (std::is_constructible_v<T, U>) {
-      return Compare(T(value), value_);
+      return compare_(T(value), *value_);
     } else if constexpr (std::is_constructible_v<U, T>) {
-      return Compare(static_cast<U>(value_), value);
+      // Compare in the argument type when it can hold the reference value
+      // (the original fallback).  The compatibility static_asserts above
+      // already reject incompatible types, so this is rarely reached.
+      const U expected = static_cast<U>(*value_);
+      switch (op_) {
+        case Op::kEq: return value == expected;
+        case Op::kNe: return !(value == expected);
+        case Op::kLt: return detail::Less(value, expected);
+        case Op::kLe: return detail::LessEqual(value, expected);
+        case Op::kGt: return detail::Greater(value, expected);
+        case Op::kGe: return detail::GreaterEqual(value, expected);
+        case Op::kAny: break;
+      }
+      return true;
     } else {
       static_assert(std::is_constructible_v<U, T>,
                     "The argument type is not compatible with this matcher.");
@@ -320,28 +340,41 @@ class Matcher : public detail::MatcherBase {
   std::string Describe() const override { return desc_; }
 
  private:
-  template <class A, class B>
-  bool Compare(const A& actual, const B& expected) const {
-    switch (op_) {
-      case Op::kEq: return actual == expected;
-      case Op::kNe: return !(actual == expected);
-      case Op::kLt: return detail::Less(actual, expected);
-      case Op::kLe: return detail::LessEqual(actual, expected);
-      case Op::kGt: return detail::Greater(actual, expected);
-      case Op::kGe: return detail::GreaterEqual(actual, expected);
-      case Op::kAny: break;
+  // The comparison of one op, instantiated only for the op a factory binds.
+  template <Op O>
+  static bool CompareWith(const T& actual, const T& expected) {
+    if constexpr (O == Op::kEq) return actual == expected;
+    else if constexpr (O == Op::kNe) return !(actual == expected);
+    else if constexpr (O == Op::kLt) return detail::Less(actual, expected);
+    else if constexpr (O == Op::kLe) return detail::LessEqual(actual, expected);
+    else if constexpr (O == Op::kGt) return detail::Greater(actual, expected);
+    else if constexpr (O == Op::kGe) return detail::GreaterEqual(actual, expected);
+    else return true;
+  }
+
+  // Runtime dispatch, used only when a matcher is converted to another value
+  // type and the comparison has to be rebuilt for the new type.
+  static bool (*ComparisonFor(Op op))(const T&, const T&) {
+    switch (op) {
+      case Op::kEq: return &CompareWith<Op::kEq>;
+      case Op::kNe: return &CompareWith<Op::kNe>;
+      case Op::kLt: return &CompareWith<Op::kLt>;
+      case Op::kLe: return &CompareWith<Op::kLe>;
+      case Op::kGt: return &CompareWith<Op::kGt>;
+      case Op::kGe: return &CompareWith<Op::kGe>;
+      case Op::kAny: return nullptr;
     }
-    return true;
+    return nullptr;
   }
 
   template <class>
   friend class Matcher;
 
   Op op_{Op::kAny};
-  T value_{};
-  bool has_value_{false};
+  std::optional<T> value_{};
   bool has_predicate_{false};
   std::function<bool(const T&)> predicate_;
+  bool (*compare_)(const T&, const T&){nullptr};
   std::string desc_{"is anything"};
 };
 
