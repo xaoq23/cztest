@@ -1,6 +1,6 @@
 # cztest
 
-**A C++20-native, single-header unit and integration testing framework for modern C++.**
+**A C++20-native, header-only unit and integration testing framework for modern C++.**
 Importing it costs one `-I`. Mocking works at the level of a single function.
 
 ```cpp
@@ -60,8 +60,6 @@ price of the single header is that the runner of cztest is compiled in your
 translation unit, while GoogleTest keeps its runner in a library.
 
 ## Why another framework
-
-Three reasons, and they are the reason for everything else in the code.
 
 **1. The vocabulary is the one people already know.** `TEST`, `TEST_F`, `EXPECT_EQ`,
 `EXPECT_CALL`, `Times`, `WillOnce`, `Return` — all of them are GoogleTest's names. Code that
@@ -536,7 +534,7 @@ why the framework does not need to be known to cizon2 at all.
 cztest is header only, so a dependency needs no compilation:
 
 ```bash
-cizon2 add https://github.com/you/cztest   # writes [dependencies] and cizon.lock
+cizon2 add https://github.com/xaoq23/cztest.git   # writes [dependencies] and cizon.lock
 cizon2 sync                                 # restores the checkouts, without building
 ```
 
