@@ -1,6 +1,6 @@
 # cztest
 
-**一个面向现代 C++ 的 C++20 原生、单头文件单元/集成测试框架。**
+**一个面向现代 C++ 的 C++20 原生、仅头文件单元/集成测试框架。**
 接入只需要一个 `-I`；mock 的粒度是单个函数。
 
 ```cpp
@@ -60,8 +60,6 @@ cztest 有 mock ✓、有自己的运行器 ✓，doctest 都没有 ✓。
 而 GoogleTest 把运行器放在库里 ✓。
 
 ## 为什么还要一个框架
-
-三个理由，也正是代码里其它所有取舍的来源。
 
 **1. 词汇是大家已经会的那一套。** `TEST`、`TEST_F`、`EXPECT_EQ`、`EXPECT_CALL`、`Times`、
 `WillOnce`、`Return` —— 全是 GoogleTest 的名字。从 gtest 迁过来的代码**不需要学任何新概念**，
@@ -520,7 +518,7 @@ cizon2 test -- --filter=Mock.*      # 参数透传给测试进程
 cztest 是纯头文件库 ✓，作为依赖不需要编译任何东西 ✓：
 
 ```bash
-cizon2 add https://github.com/you/cztest   # 写入 [dependencies] 与 cizon.lock
+cizon2 add https://github.com/xaoq23/cztest.git   # 写入 [dependencies] 与 cizon.lock
 cizon2 sync                                 # 还原/校验依赖，不构建
 ```
 
