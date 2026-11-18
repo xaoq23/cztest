@@ -11,7 +11,7 @@ TEST(Math, Addition) {
 }
 ```
 
-- **纯头文件** —— 6 个头文件，零依赖，无需链接任何东西
+- **仅头文件** —— 6 个头文件，零依赖，无需链接任何东西
 - **函数级 mock** —— 按方法声明期望、匹配参数、校验调用次数
 - **C++20 优先** —— `std::source_location`、concepts、`std::span`、`std::string_view`
 - **自带运行器** —— 过滤、列表、JUnit XML、彩色输出
@@ -35,7 +35,7 @@ TEST(Math, Addition) {
 
 | | gtest / gmock | Catch2 / doctest | cztest |
 | --- | --- | --- | --- |
-| 构建 | 编译并链接两个库 | 单头文件 | 单头文件 |
+| 构建 | 编译并链接两个库 | 单头文件 | 仅头文件 |
 | mock | 有，含自由函数 | 无 | 有，虚方法 |
 | 断言名 | `EXPECT_EQ` | `CHECK_EQ` | `EXPECT_EQ` |
 | 失败位置 | 文件 + 行号 | 文件 + 行号 | 文件 + 行号 **+ 函数名** |
@@ -45,8 +45,8 @@ TEST(Math, Addition) {
 
 ### 它的代价
 
-同样的用例 ✓ 同样的编译器 ✓ 同样的机器 ✓ —— 方法见
-[benchmarks/README.md](benchmarks/README.md) ✓：
+同样的用例、同样的编译器、同样的机器 —— 方法见
+[benchmarks/README.md](benchmarks/README.md)：
 
 | 1000 个用例 | 编译时间 | 二进制大小 | 运行时间 |
 | --- | --- | --- | --- |
@@ -54,10 +54,10 @@ TEST(Math, Addition) {
 | gtest / gmock | 38.3 s | 4984 kB | 44 ms |
 | doctest | 10.2 s | 1409 kB | 20 ms |
 
-比 GoogleTest 编译快 ✓、二进制小得多 ✓；比 doctest 重 ✓ —— 这是应该的 ✓：
-cztest 有 mock ✓、有自己的运行器 ✓，doctest 都没有 ✓。
-单头文件的代价是 ✓：cztest 的运行器在你的翻译单元里编译 ✓，
-而 GoogleTest 把运行器放在库里 ✓。
+比 GoogleTest 编译快、二进制小得多；比 doctest 重 —— 这是应该的：
+cztest 有 mock、有自己的运行器，doctest 都没有。
+仅头文件的代价是：cztest 的运行器在你的翻译单元里编译，
+而 GoogleTest 把运行器放在库里。
 
 ## 为什么还要一个框架
 
@@ -73,12 +73,12 @@ if (auto result = cztest::ExpectEqual(a, b); !result) {
 }
 ```
 
-它们可以被组合、可以被自己的测试测、判定谓词还是 `constexpr` 的 ✓（编译期可查 ✓）。
+它们可以被组合、可以被自己的测试测、判定谓词还是 `constexpr` 的（编译期可查）。
 
-**3. 单头文件意味着放弃 mock 自由函数。** 拦截一个自由函数需要链接期符号替换
+**3. 仅头文件意味着放弃 mock 自由函数。** 拦截一个自由函数需要链接期符号替换
 （`--wrap`、弱符号、`LD_PRELOAD`、IAT patch），那意味着一个编译单元、一个全局注册表，
-以及一套在 Windows 上行为不同的机制。**单头文件与自由函数 mock 二选一** ✓ —— cztest 选了前者 ✓，
-改成 mock 虚方法 ✓。
+以及一套在 Windows 上行为不同的机制。**仅头文件与自由函数 mock 二选一** —— cztest 选了前者，
+改成 mock 虚方法。
 
 ## 快速开始
 
@@ -113,9 +113,9 @@ $ ./tests
 [  PASSED  ] 1 test(s).
 ```
 
-在 ELF 和 Mach-O 上框架会装一个弱符号 `main` ✓，所以那里连入口点文件都不需要 ✓。
-Windows（COFF）必须有且只有一个翻译单元提供 `main` ✓：`CZTEST_MAIN()` ✓，
-或者在 include 之前定义 `CZTEST_IMPLEMENT_MAIN` ✓。
+在 ELF 和 Mach-O 上框架会装一个弱符号 `main`，所以那里连入口点文件都不需要。
+Windows（COFF）必须有且只有一个翻译单元提供 `main`：`CZTEST_MAIN()`，
+或者在 include 之前定义 `CZTEST_IMPLEMENT_MAIN`。
 
 ## 目录结构
 
@@ -129,16 +129,16 @@ cztest/
 │   ├── param.hpp            #   参数化测试
 │   └── compat.hpp           #   对不支持的 GoogleTest 写法给出教学式报错
 ├── tests/                   # 框架自己的测试
-├── benchmarks/              # 编译时间与体积的测量 ✓
-│   ├── README.md             #   数字与测量方法 ✓
-│   └── run.py                #   跑出这些数字的脚本 ✓
+├── benchmarks/              # 编译时间与体积的测量
+│   ├── README.md             #   数字与测量方法
+│   └── run.py                #   跑出这些数字的脚本
 ├── docs/
 │   ├── tutorial.md           #   从最小用例到集成测试的完整教程
 │   └── migration-gtest.md    #   从 GoogleTest 过来要改什么
 └── cizon.toml
 ```
 
-把 `include/cztest` 拷进你的项目，就完成了接入 ✓。
+把 `include/cztest` 拷进你的项目，就完成了接入。
 
 ## API
 
@@ -158,8 +158,8 @@ cztest/
 | `SCOPED_TRACE("...")` | 给失败补上下文 |
 | `SKIP("...")` | 结束用例但不判失败 |
 
-每个 `EXPECT_*` 都有对应的 `ASSERT_*` ✓。`EXPECT_*` 记录失败后继续 ✓，
-`ASSERT_*` 记录失败后立刻终止当前用例 ✓。
+每个 `EXPECT_*` 都有对应的 `ASSERT_*`。`EXPECT_*` 记录失败后继续，
+`ASSERT_*` 记录失败后立刻终止当前用例。
 
 ```cpp
 const auto result = Parse("a=1");
@@ -181,7 +181,7 @@ if (auto result = cztest::ExpectEqual(a, b); !result) {
 }
 ```
 
-判定谓词是 `constexpr` 的 ✓：
+判定谓词是 `constexpr` 的：
 
 ```cpp
 static_assert(cztest::Equal(1 + 1, 2));
@@ -196,7 +196,7 @@ Expected: result.fields.size() == 2
   Actual: 1 vs 2
 ```
 
-位置来自 `std::source_location` ✓，断言位于你自己的函数里时还会带上函数名 ✓：
+位置来自 `std::source_location`，断言位于你自己的函数里时还会带上函数名：
 
 ```
 C:\path\tests\test_modern.cpp:9 (int demo::Helper(int)): Failure
@@ -235,7 +235,7 @@ TEST_F(ConfigFixture, ReadsThePort) {
 }
 ```
 
-`SetUp` 在夹具的每个用例前跑 ✓，`TearDown` 在之后跑 ✓（**用例失败也会跑** ✓）。
+`SetUp` 在夹具的每个用例前跑，`TearDown` 在之后跑（**用例失败也会跑**）。
 
 ### 参数化测试
 
@@ -264,8 +264,8 @@ INSTANTIATE_TEST_SUITE_P(Basic, TrimTest, cztest::Values(
     Case{"a  ", 1}));
 ```
 
-展开后的用例名是 `Basic/TrimTest.RemovesTheSpaces/0`、`/1` …… ✓ 可以精确选中某一个 ✓。
-参数源有 `cztest::Values(...)`、`cztest::Range(begin, end)`、`cztest::Bool()` ✓。
+展开后的用例名是 `Basic/TrimTest.RemovesTheSpaces/0`、`/1` …… 可以精确选中某一个。
+参数源有 `cztest::Values(...)`、`cztest::Range(begin, end)`、`cztest::Bool()`。
 
 ### Mock
 
@@ -289,9 +289,9 @@ class MockHttp : public IHttp, public cztest::MockBase {
 CZTEST_MOCK_COMPLETE(MockHttp);
 ```
 
-`CZTEST_MOCK_METHOD(返回值, 函数名, 参数类型...)` 的参数类型**不带外括号** ✓。
-const 成员函数用 `CZTEST_MOCK_CONST_METHOD` ✓；无参数函数用
-`CZTEST_MOCK_NOARG_METHOD` / `CZTEST_MOCK_NOARG_CONST_METHOD` ✓。
+`CZTEST_MOCK_METHOD(返回值, 函数名, 参数类型...)` 的参数类型**不带外括号**。
+const 成员函数用 `CZTEST_MOCK_CONST_METHOD`；无参数函数用
+`CZTEST_MOCK_NOARG_METHOD` / `CZTEST_MOCK_NOARG_CONST_METHOD`。
 
 **3. 设期望、注入、调用**
 
@@ -315,7 +315,7 @@ TEST(Http, DownloadsTheBody) {
 | `.Times(n)` | 期望调用几次 |
 | `.Times(AtLeast(n))` / `AtMost(n)` / `AnyNumber()` / `Exactly(n)` | 更灵活的次数约束 |
 | `.Once()` | 等价于 `Times(1)` |
-| `.WillOnce(action)` | **下一次**调用用的动作 ✓ 多次调用形成序列 ✓ |
+| `.WillOnce(action)` | **下一次**调用用的动作，多次调用形成序列 |
 | `.WillRepeatedly(action)` | 之后所有调用用的动作 |
 | `.DoAndReturn(lambda)` | 同 `WillRepeatedly`，名字更贴切 |
 
@@ -325,31 +325,31 @@ TEST(Http, DownloadsTheBody) {
 | `cztest::ReturnRef(v)` | 已有对象的引用 |
 | `cztest::Invoke(f)` | 任意可调用对象 |
 
-动作可以捕获**只可移动**的对象 ✓ —— cztest 自带一个 move-only 可调用体 ✓，
-不依赖 `std::move_only_function`（不是每个标准库都提供 ✓）。
+动作可以捕获**只可移动**的对象 —— cztest 自带一个 move-only 可调用体，
+不依赖 `std::move_only_function`（不是每个标准库都提供）。
 
-mock 是严格的 ✓：没有匹配到任何期望的调用会立刻失败 ✓ 并打印实际参数 ✓ 和已有的期望 ✓；
-次数没满足的期望在用例结束时报告 ✓。
-调用次数超过期望上限时 ✓，失败会指向那条期望所在的行 ✓。
+mock 是严格的：没有匹配到任何期望的调用会立刻失败，并打印实际参数和已有的期望；
+次数没满足的期望在用例结束时报告。
+调用次数超过期望上限时，失败会指向那条期望所在的行。
 
-**多条期望同时匹配同一次调用时 ✓，最后设置的那条生效 ✓** —— 之前设置的成为兜底 ✓。
-这是 GoogleMock 的规则 ✓，所以期望要从下往上读 ✓：
+**多条期望同时匹配同一次调用时，最后设置的那条生效** —— 之前设置的成为兜底。
+这是 GoogleMock 的规则，所以期望要从下往上读：
 
 ```cpp
 EXPECT_CALL(http, Get(cztest::Any(), cztest::Any())).WillRepeatedly(cztest::Return(false));
 EXPECT_CALL(http, Get("https://x/y", cztest::Any())).WillOnce(cztest::Return(true));
-// 第二条回答 "https://x/y" ✓ 第一条回答其余的调用 ✓。
+// 第二条回答 "https://x/y"，第一条回答其余的调用。
 ```
 
-一个 mock 只属于一个用例 ✓：在用例体里创建它 ✓。这样每次运行用例都从干净的期望开始 ✓，
-`--repeat` 需要的正是这一点 ✓。
+一个 mock 只属于一个用例：在用例体里创建它。这样每次运行用例都从干净的期望开始，
+`--repeat` 需要的正是这一点。
 
 #### 匹配器
 
 `Eq` `Ne` `Lt` `Le` `Gt` `Ge` `Any` `Not` `StrEq` `HasSubstr` `StartsWith` `EndsWith`
-`IsNull` `NotNull` `Truly` ✓。直接写常量值就是 `Eq` ✓。
+`IsNull` `NotNull` `Truly`。直接写常量值就是 `Eq`。
 
-匹配器可以组合 ✓，自己写的匹配器只需要一个 `Matches` 成员 ✓：
+匹配器可以组合，自己写的匹配器只需要一个 `Matches` 成员：
 
 ```cpp
 EXPECT_THAT(value, cztest::AllOf(cztest::Ge(1), cztest::Lt(100)));   // 全部满足
@@ -363,7 +363,7 @@ struct IsEven {
 EXPECT_THAT(value, IsEven{});
 ```
 
-比较类匹配器在类型提供 `<=>` 时走三路比较 ✓，所以只定义了 `operator<=>` 的类型也能用 ✓。
+比较类匹配器在类型提供 `<=>` 时走三路比较，所以只定义了 `operator<=>` 的类型也能用。
 
 #### 两个编译期护栏
 
@@ -376,21 +376,21 @@ class MockHttp : public IHttp, public cztest::MockBase {
 CZTEST_MOCK_COMPLETE(MockHttp);     // mock 必须实现了接口的所有方法
 ```
 
-方法签名和接口不一致的情况，`override` 本身就会在宏那一行报错 ✓。
+方法签名和接口不一致的情况，`override` 本身就会在宏那一行报错。
 
-`CZTEST_MOCK_INTERFACE` 需要接口的**完整**类型 ✓ —— 它要检查虚析构 ✓，
-只写了前向声明的接口没法检查 ✓。
+`CZTEST_MOCK_INTERFACE` 需要接口的**完整**类型 —— 它要检查虚析构，
+只写了前向声明的接口没法检查。
 
 #### 线程安全边界
 
-**mock 不是线程安全的** ✓：调用计数和期望表都是没有锁的普通成员 ✓。
-一个线程一个 mock，或者自己加锁 ✓。
+**mock 不是线程安全的**：调用计数和期望表都是没有锁的普通成员。
+一个线程一个 mock，或者自己加锁。
 
 ## 运行器
 
 ```
---filter=<patterns>  只运行匹配的用例（支持 * 和 ? 通配符 ✓ 多个模式用 : 分隔 ✓
-                     以 - 开头的模式表示排除 ✓）
+--filter=<patterns>  只运行匹配的用例（支持 * 和 ? 通配符，多个模式用 : 分隔
+                     以 - 开头的模式表示排除）
 --list               列出所有用例后退出
 --repeat=<n>         每个用例重复运行 n 次
 --quiet / -q         只输出失败详情和汇总
@@ -400,36 +400,36 @@ CZTEST_MOCK_COMPLETE(MockHttp);     // mock 必须实现了接口的所有方法
 --help               显示帮助
 ```
 
-用例名格式为 `Suite.Name` ✓：
+用例名格式为 `Suite.Name`：
 
 ```bash
 ./tests --filter=Mock.*
 ./tests --filter="Basic/TrimTest.RemovesTheSpaces/1"
 ```
 
-过滤器用的是 GoogleTest 的语法 ✓：多个模式用冒号分隔 ✓，以 `-` 开头的模式把匹配的用例排除掉 ✓：
+过滤器用的是 GoogleTest 的语法：多个模式用冒号分隔，以 `-` 开头的模式把匹配的用例排除掉：
 
 ```bash
-./tests --filter="Mock.*:-Mock.Slow"   # 所有 mock，除了慢的那个 ✓
-./tests --filter="-Mock.Slow"           # 除了慢的那个，全跑 ✓
+./tests --filter="Mock.*:-Mock.Slow"   # 所有 mock，除了慢的那个
+./tests --filter="-Mock.Slow"           # 除了慢的那个，全跑
 ```
 
-过滤器匹配不到任何用例时 ✓ 一个用例都不会跑 ✓ —— 在 CI 的日志里很容易被忽略 ✓，
-所以运行器会明确说出来 ✓：
+过滤器匹配不到任何用例时，一个用例都不会跑 —— 在 CI 的日志里很容易被忽略，
+所以运行器会明确说出来：
 
 ```
 [==========] No test matched the filter 'Mock'
 Check the names with --list.
 ```
 
-用 `--repeat` 时 ✓ 每一行都会标明这是第几次运行 ✓ —— 偶发失败的用例因此一眼就能看出来 ✓：
+用 `--repeat` 时，每一行都会标明这是第几次运行 —— 偶发失败的用例因此一眼就能看出来：
 
 ```
 [       OK ] Flaky.FailsOnTheSecondRun (run 1 of 3)
 [  FAILED  ] Flaky.FailsOnTheSecondRun (run 2 of 3)
 ```
 
-每个用例只占一行 ✓，失败详情紧跟在其后 ✓：
+每个用例只占一行，失败详情紧跟在其后：
 
 ```
 [==========] Running 4 test(s).
@@ -445,10 +445,10 @@ Expected: Get(1) == 2
 [  FAILED  ] 1 test(s) failed.
 ```
 
-退出码：全部通过或跳过是 0 ✓，否则是 1 ✓。
+退出码：全部通过或跳过是 0，否则是 1。
 
-JUnit 报告里带着失败的完整信息 ✓，会标记被跳过的用例 ✓，也记着每个用例花了多久 ✓ ——
-CI 的面板因此能显示到底哪里出了问题 ✓，也能画出这次运行的时间线 ✓：
+JUnit 报告里带着失败的完整信息，会标记被跳过的用例，也记着每个用例花了多久 ——
+CI 的面板因此能显示到底哪里出了问题，也能画出这次运行的时间线：
 
 ```xml
 <testcase classname="Mock" name="SequenceOfActions" time="0.000021">
@@ -457,7 +457,7 @@ CI 的面板因此能显示到底哪里出了问题 ✓，也能画出这次运�
 </testcase>
 ```
 
-两个用例重名是一个错误 ✓ —— 运行器会拒绝启动 ✓ 并指出两处的位置 ✓：
+两个用例重名是一个错误 —— 运行器会拒绝启动，并指出两处的位置：
 
 ```
 [==========] Duplicate test names:
@@ -467,8 +467,8 @@ CI 的面板因此能显示到底哪里出了问题 ✓，也能画出这次运�
 Every test needs its own name: rename the ones that repeat.
 ```
 
-编译器抓不到这件事 ✓ —— 因为用例分布在不同的翻译单元里 ✓；运行器能抓到 ✓，
-因为它全都看得见 ✓。
+编译器抓不到这件事 —— 因为用例分布在不同的翻译单元里；运行器能抓到，
+因为它全都看得见。
 
 ## 与 cizon2 集成
 
@@ -509,26 +509,26 @@ cizon2 test bintree_tests           # 只跑一个
 cizon2 test -- --filter=Mock.*      # 参数透传给测试进程
 ```
 
-`kind = "test"` 的 target 会被 `cizon2 build` 和 `cizon2 run` 完全忽略 ✓，
-只有 `cizon2 test` 会构建并运行它 ✓。测试进程按退出码判定 ✓ ——
-这也是为什么 cizon2 不需要认识这个框架 ✓。
+`kind = "test"` 的 target 会被 `cizon2 build` 和 `cizon2 run` 完全忽略，
+只有 `cizon2 test` 会构建并运行它。测试进程按退出码判定 ——
+这也是为什么 cizon2 不需要认识这个框架。
 
 ### 把 cztest 作为依赖引入
 
-cztest 是纯头文件库 ✓，作为依赖不需要编译任何东西 ✓：
+cztest 是仅头文件库，作为依赖不需要编译任何东西：
 
 ```bash
 cizon2 add https://github.com/xaoq23/cztest.git   # 写入 [dependencies] 与 cizon.lock
 cizon2 sync                                 # 还原/校验依赖，不构建
 ```
 
-cizon2 会自己加上 `-Ideps/cztest/include` 和 `-Ideps/cztest` ✓，
-所以依赖方**不需要写 `-I`** ✓，也不需要 `system_links` ✓ ——
-对比 gtest 要 `-lgtest_main -lgtest` ✓。
+cizon2 会自己加上 `-Ideps/cztest/include` 和 `-Ideps/cztest`，
+所以依赖方**不需要写 `-I`**，也不需要 `system_links` ——
+对比 gtest 要 `-lgtest_main -lgtest`。
 
 ### 单元测试与集成测试
 
-把两者分开 ✓：它们属于不同的 target ✓，回答的是不同的问题 ✓。
+把两者分开：它们属于不同的 target，回答的是不同的问题。
 
 | | 单元测试 | 集成测试 |
 | --- | --- | --- |
@@ -536,13 +536,13 @@ cizon2 会自己加上 `-Ideps/cztest/include` 和 `-Ideps/cztest` ✓，
 | 速度 | 毫秒 | 秒 |
 | 失败意味着 | 我的逻辑错了 | 两个部件对不上 |
 
-需要真实文件、数据库或 socket 的集成测试**依然是测试** ✓：
-它属于 `tests/integration/` ✓、自己的 target ✓，而且必须做好隔离 ✓
-（临时目录 ✓、内存数据库 ✓、由系统分配的端口 ✓）。
+需要真实文件、数据库或 socket 的集成测试**依然是测试**：
+它属于 `tests/integration/`、自己的 target，而且必须做好隔离
+（临时目录、内存数据库、由系统分配的端口）。
 
 ## 从 GoogleTest 迁移
 
-断言层完全不用改 ✓。机械部分：
+断言层完全不用改。机械部分：
 
 ```bash
 # 命名空间
@@ -557,10 +557,10 @@ sed -i 's/public ::testing::Test/public cztest::Test/' tests/*.cpp
 sed -i 's/MOCK_METHOD(\(.*\), (\(.*\)), (override));/CZTEST_MOCK_METHOD(\1, \2);/' tests/*.cpp
 ```
 
-有两处脚本替不了 ✓：`::testing::_` 要改成 `cztest::Any()` ✓，
-`ON_CALL(...).WillByDefault(...)` 要改成 `EXPECT_CALL(...).WillRepeatedly(...)` ✓。
+有两处脚本替不了：`::testing::_` 要改成 `cztest::Any()`，
+`ON_CALL(...).WillByDefault(...)` 要改成 `EXPECT_CALL(...).WillRepeatedly(...)`。
 
-对于 cztest 没有的 GoogleTest 特性 ✓，编译器会告诉你该用什么 ✓：
+对于 cztest 没有的 GoogleTest 特性，编译器会告诉你该用什么：
 
 ```
 error: static assertion failed: cztest has no ON_CALL. Use EXPECT_CALL(mock, Method(args))
@@ -568,44 +568,44 @@ error: static assertion failed: cztest has no ON_CALL. Use EXPECT_CALL(mock, Met
 ```
 
 完整清单和每个匹配器的对应关系见
-[docs/migration-gtest.md](docs/migration-gtest.md) ✓。
+[docs/migration-gtest.md](docs/migration-gtest.md)。
 
 ## 设计说明
 
 代码背后的原则，及其代价。
 
-**单头文件，或者自由函数 mock —— 只能选一个。** 拦截自由函数需要链接期符号替换 ✓，
-那需要一个编译单元 ✓ 且不能干净地跨平台 ✓。cztest 选了单头文件 ✓，改成 mock 虚方法 ✓。
+**仅头文件，或者自由函数 mock —— 只能选一个。** 拦截自由函数需要链接期符号替换，
+那需要一个编译单元，且不能干净地跨平台。cztest 选了仅头文件，改成 mock 虚方法。
 
-**用最大框架的词汇。** 名字都是 GoogleTest 的 ✓，迁移过来的代码不需要学新概念 ✓。
+**用最大框架的词汇。** 名字都是 GoogleTest 的，迁移过来的代码不需要学新概念。
 
-**断言是函数，宏是糖。** 这样断言可以组合 ✓、可以被单测 ✓、可以用于常量表达式 ✓。
+**断言是函数，宏是糖。** 这样断言可以组合、可以被单测、可以用于常量表达式。
 
-**能在编译期查的，绝不留到运行期。** 动作和匹配器用 concept 约束 ✓，
-mock 方法由 `override` 对照接口检查 ✓，两个护栏覆盖虚析构和漏掉的方法 ✓，
-用例名由 `consteval` 函数检查 ✓。
+**能在编译期查的，绝不留到运行期。** 动作和匹配器用 concept 约束，
+mock 方法由 `override` 对照接口检查，两个护栏覆盖虚析构和漏掉的方法，
+用例名由 `consteval` 函数检查。
 
-**类型擦除不丢类型。** 被 mock 的函数的参数以「指向 const 的指针」的形式送到期望里 ✓，
-期望再把它们转回精确的参数类型 ✓ —— 所以 `const T&` 的参数一路保持 const ✓，
-只有 mock 自己拥有的参数才能被改写或移走 ✓。
+**类型擦除不丢类型。** 被 mock 的函数的参数以「指向 const 的指针」的形式送到期望里，
+期望再把它们转回精确的参数类型 —— 所以 `const T&` 的参数一路保持 const，
+只有 mock 自己拥有的参数才能被改写或移走。
 
-**报错要说该怎么做。** cztest 不支持的 GoogleTest 写法会给出替代方案 ✓，
-而不是一句 "not declared in this scope" ✓。
+**报错要说该怎么做。** cztest 不支持的 GoogleTest 写法会给出替代方案，
+而不是一句 "not declared in this scope"。
 
-**边界写在纸上。** 不支持自由函数 mock ✓、mock 非线程安全 ✓、没有 death test ✓ ——
-全都写进文档 ✓，而不是靠默契 ✓。
+**边界写在纸上。** 不支持自由函数 mock、mock 非线程安全、没有 death test ——
+全都写进文档，而不是靠默契。
 
 ## 已知限制
 
-- `EXPECT_CALL(obj, Method(args))` 依赖 `##` 拼接（`obj.gmock_Method`）✓，
-  这是 GCC / Clang 的实际行为 ✓。
-- mock 方法的参数类型必须与接口**完全一致** ✓，`const` 和引用都要写全 ✓。
-- 无参数的 mock 方法要用 `CZTEST_MOCK_NOARG_METHOD` ✓。
-- 一个 mock 方法最多 8 个参数 ✓。
-- `CZTEST_MOCK_INTERFACE` 需要接口的完整类型 ✓。
-- 一个 mock 只属于一个用例 ✓：活得比用例体还久的 mock 会保留状态 ✓，也不会再被校验 ✓。
-- mock 不是线程安全的 ✓。
-- 没有 death test ✓、没有 typed test ✓、不能用 GoogleMock 的匹配器写 `EXPECT_THAT` ✓。
+- `EXPECT_CALL(obj, Method(args))` 依赖 `##` 拼接（`obj.gmock_Method`），
+  这是 GCC / Clang 的实际行为。
+- mock 方法的参数类型必须与接口**完全一致**，`const` 和引用都要写全。
+- 无参数的 mock 方法要用 `CZTEST_MOCK_NOARG_METHOD`。
+- 一个 mock 方法最多 8 个参数。
+- `CZTEST_MOCK_INTERFACE` 需要接口的完整类型。
+- 一个 mock 只属于一个用例：活得比用例体还久的 mock 会保留状态，也不会再被校验。
+- mock 不是线程安全的。
+- 没有 death test、没有 typed test、不能用 GoogleMock 的匹配器写 `EXPECT_THAT`。
 
 ## 文档
 

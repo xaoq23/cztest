@@ -35,7 +35,7 @@ Version 0.4.0 (`CZTEST_VERSION_MAJOR` / `MINOR` / `PATCH`).
 
 | | gtest / gmock | Catch2 / doctest | cztest |
 | --- | --- | --- | --- |
-| Build | compile and link two libraries | header only | header only |
+| Build | compile and link two libraries | single header | header only |
 | Mocking | yes, including free functions | no | yes, virtual methods |
 | Assertion names | `EXPECT_EQ` | `CHECK_EQ` | `EXPECT_EQ` |
 | Failure location | file and line | file and line | file, line **and function** |
@@ -56,7 +56,7 @@ The same tests, the same compiler, the same machine; the method is in
 
 cztest compiles faster than GoogleTest and produces a much smaller binary. It
 costs more than doctest, which has neither mocks nor a runner of its own. The
-price of the single header is that the runner of cztest is compiled in your
+price of being header only is that the runner of cztest is compiled in your
 translation unit, while GoogleTest keeps its runner in a library.
 
 ## Why another framework
@@ -77,11 +77,11 @@ if (auto result = cztest::ExpectEqual(a, b); !result) {
 They can be combined, they can be unit tested, and the comparison predicates are
 `constexpr`, so a property can be checked at compile time.
 
-**3. A single header rules out mocking free functions.** Intercepting a free
+**3. Being header only rules out mocking free functions.** Intercepting a free
 function needs link-time symbol replacement (`--wrap`, weak symbols, `LD_PRELOAD`, IAT
 patching). That means a compiled component, a global registry, and a mechanism that does
-not work the same on Windows. **Single header and free function mocking are mutually
-exclusive** — cztest chose the single header, and mocks virtual methods instead.
+not work the same on Windows. **Header only and free function mocking are mutually
+exclusive** — cztest chose to stay header only, and mocks virtual methods instead.
 
 ## Quick start
 
@@ -593,9 +593,9 @@ The complete list, with the counterpart of every matcher, is in
 
 The principles behind the code, and what they cost.
 
-**Single header, or free function mocking — not both.** Intercepting a free function
+**Header only, or free function mocking — not both.** Intercepting a free function
 needs link-time symbol replacement, which needs a compiled component and does not
-port cleanly. cztest took the single header and mocks virtual methods.
+port cleanly. cztest stayed header only and mocks virtual methods.
 
 **The vocabulary of the biggest framework.** The names are GoogleTest's, so that
 migrating code needs no new concepts.
