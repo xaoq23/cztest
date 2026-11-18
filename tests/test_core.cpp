@@ -61,7 +61,8 @@ TEST_F(ContainerFixture, CanBeExtended) {
   EXPECT_EQ(items_.size(), 4u);
 }
 
-// The entry point of the test binary.  On Windows (COFF) exactly one
-// translation unit has to provide it; on ELF/Mach-O the framework installs a
-// weak main() on its own and this line is not needed.
+// Only Windows (COFF) needs an explicit main: on ELF/Mach-O cztest.hpp already
+// installs a weak main(), and defining another one here would be a redefinition.
+#if defined(_WIN32)
 CZTEST_MAIN()
+#endif
