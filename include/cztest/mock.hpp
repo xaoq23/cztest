@@ -215,6 +215,9 @@ class ExpectationEntry {
   /// Used when a call goes over the limit.
   virtual std::string DescribeLimit() const = 0;
   virtual std::source_location Site() const = 0;
+  /// Names the arguments that did not match, with the expected and the actual
+  /// value of each. Used when a call matches no expectation.
+  virtual std::string DescribeMismatch(detail::ArgSpan args) const = 0;
 };
 
 // Storage for the return value of a mocked function.  Reference returning
@@ -306,6 +309,13 @@ class Expectation final : public ExpectationEntry {
 
   std::source_location Site() const override { return site_; }
 
+  std::string DescribeMismatch(detail::ArgSpan args) const override {
+    std::string message;
+    bool first = true;
+    DescribeMismatchImpl(message, first, args, std::index_sequence_for<Args...>{});
+    return message;
+  }
+
   std::string DescribeLimit() const override {
     std::string message = "the expectation with (";
     bool first = true;
@@ -365,6 +375,25 @@ class Expectation final : public ExpectationEntry {
   template <std::size_t... I>
   void DescribeMatchers(std::string& message, bool& first, std::index_sequence<I...>) const {
     (AppendArg(message, first, std::get<I>(matchers_).Describe()), ...);
+  }
+
+  template <std::size_t... I>
+  void DescribeMismatchImpl([[maybe_unused]] std::string& message, [[maybe_unused]] bool& first,
+                            [[maybe_unused]] detail::ArgSpan args, std::index_sequence<I...>) const {
+    (AppendMismatch<I>(message, first, args), ...);
+  }
+
+  template <std::size_t I>
+  void AppendMismatch(std::string& message, bool& first, detail::ArgSpan args) const {
+    using ArgType = std::remove_reference_t<std::tuple_element_t<I, std::tuple<Args...>>>;
+    const auto& value = *static_cast<const ArgType*>(args[I]);
+    if (std::get<I>(matchers_).Matches(value)) return;
+    if (!first) message += "; ";
+    first = false;
+    message += "argument " + std::to_string(I) + ": expected ";
+    message += std::get<I>(matchers_).Describe();
+    message += ", actual ";
+    message += PrintValue(value);
   }
 
   std::string name_;
@@ -507,6 +536,26 @@ class MockBase : public detail::MockVerifier {
     return message;
   }
 
+  /// Same list, but each expectation also names the arguments that did not
+  /// match the call, so the reader sees which value was wrong without guessing.
+  std::string DescribeExpectations(const char* name, detail::ArgSpan args) const {
+    const auto it = expectations_.find(name);
+    if (it == expectations_.end() || it->second.empty()) return {};
+    std::string message = "The expectations for '";
+    message += name;
+    message += "' are:";
+    for (const auto& entry : it->second) {
+      message += "\n    ";
+      message += entry->Describe();
+      const auto mismatch = entry->DescribeMismatch(args);
+      if (!mismatch.empty()) {
+        message += "\n      ";
+        message += mismatch;
+      }
+    }
+    return message;
+  }
+
  private:
   mutable std::map<std::string, std::vector<std::shared_ptr<detail::ExpectationEntry>>> expectations_;
   bool verified_{false};
@@ -563,10 +612,16 @@ Ret MockInvoke(const MockBase& mock, const char* name, std::source_location loca
     // test the reader has to change.
     const auto site = mock.ExpectationSite(name);
     std::string message = DescribeCall(name, args...);
-    const auto expectations = mock.DescribeExpectations(name);
+    const auto expectations = mock.DescribeExpectations(name, args_span);
     if (!expectations.empty()) {
       message += "\n";
       message += expectations;
+    } else {
+      message += "\nNo expectation was set for '";
+      message += name;
+      message += "'. Declare one with EXPECT_CALL(mock, ";
+      message += name;
+      message += "(...)).";
     }
     ReportFailure(::cztest::detail::HasLocation(site) ? site : location, message, false);
     if constexpr (std::is_void_v<Ret>) {

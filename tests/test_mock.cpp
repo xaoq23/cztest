@@ -340,3 +340,42 @@ TEST(Mock, TheExpectationsOfAMethodCanBeListed) {
   // A method without expectations has nothing to list.
   EXPECT_TRUE(mock.DescribeExpectations("Put").empty());
 }
+
+TEST(Mock, AnUnexpectedCallNamesTheMismatchedArgument) {
+  MockStorage mock;
+  EXPECT_CALL(mock, Get(1)).Times(cztest::AnyNumber()).WillRepeatedly(cztest::Return(0));
+
+  mock.Get(2);  // argument 0 does not match
+
+  const auto failures = TakeFailures();
+  ASSERT_EQ(failures.size(), 1u);
+  const auto& message = failures.front().message;
+  // The reader sees which argument was wrong, and what was expected vs actual.
+  EXPECT_NE(message.find("argument 0: expected is equal to 1, actual 2"), std::string::npos);
+}
+
+TEST(Mock, AnUnexpectedCallPinpointsTheWrongArgument) {
+  MockStorage mock;
+  EXPECT_CALL(mock, Put(1, "a")).Times(cztest::AnyNumber());
+
+  mock.Put(1, "b");  // only the second argument differs
+
+  const auto failures = TakeFailures();
+  ASSERT_EQ(failures.size(), 1u);
+  const auto& message = failures.front().message;
+  EXPECT_NE(message.find("argument 1:"), std::string::npos);
+  // The argument that did match is not reported as a mismatch.
+  EXPECT_EQ(message.find("argument 0:"), std::string::npos);
+}
+
+TEST(Mock, AnUnexpectedCallWithoutExpectationsSaysHowToDeclareOne) {
+  MockStorage mock;
+
+  mock.Get(1);  // no expectation was set at all
+
+  const auto failures = TakeFailures();
+  ASSERT_EQ(failures.size(), 1u);
+  const auto& message = failures.front().message;
+  EXPECT_NE(message.find("No expectation was set for 'Get'"), std::string::npos);
+  EXPECT_NE(message.find("EXPECT_CALL(mock, Get(...))"), std::string::npos);
+}
